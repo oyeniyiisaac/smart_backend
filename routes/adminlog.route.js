@@ -10,7 +10,7 @@ const {
     adminGetAllSession,
     adminDashboard,
     getSingleSession,
-    verifyStudentAttendance, // 👈 Imported the newly added geofence math verification engine
+    verifyStudentLocation, // 👈 Imported the newly added geofence math verification engine
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -49,6 +49,6 @@ router.delete("/invite", protect, requireAdmin, revokeInvite);
 // Student Attendance Verification Route
 // ─────────────────────────────────────────────
 // Receives student's coordinates and checks them against the 10m class fence boundary
-router.post("/verify-attendance", verifyStudentAttendance);
+router.post("/verify-attendance", verifyStudentLocation);
 
 module.exports = router;
