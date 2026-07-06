@@ -236,8 +236,8 @@ const adminCreateSession = async (req, res) => {
 const adminGetAllSession = async (req, res) => {
     try {
         const sessions = await AdminCreateSession.find({
-          isSessionActive: true,
-        });
+            isSessionActive: true,
+        }).sort({ createdAt: -1 });
         if (!sessions || sessions.length === 0) {
             return res.status(200).json({ data: [], message: 'No sessions found' });
         }
@@ -322,8 +322,8 @@ const verifyStudentAttendance = async (req, res) => {
 
         console.log(`[Geofence Audit] Student is ${distanceMeters.toFixed(2)}m from target boundary.`);
 
-        // Apply strict 10-meter boundary rule
-        const MAX_GEOFENCE_RADIUS = 10;
+        // Apply strict 300-meter boundary rule
+        const MAX_GEOFENCE_RADIUS = 300;
         if (distanceMeters > MAX_GEOFENCE_RADIUS) {
             return res.status(403).json({
                 success: false,
