@@ -295,58 +295,73 @@ const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
 };
 
 // POST /student/verify-attendance [PROTECTED/PUBLIC DEPENDING ON ROUTE FILE]
-const verifyStudentAttendance = async (req, res) => {
+const verifyStudentLocation = async (req, res) => {
     try {
-        const { courseCode, studentLat, studentLng } = req.body;
+        // 1. Get the current student's coordinates sent from the frontend
+        const { studentLatitude, studentLongitude } = req.body;
 
-        // Search the collection database directly for an active window matching this course code
-        const activeSession = await AdminCreateSession.findOne({
-            courseCode: courseCode,
-            isSessionActive: true
-        });
+        if (!studentLatitude || !studentLongitude) {
+            return res.status(400).json({ message: "Student coordinates are required." });
+        }
 
-        if (!activeSession) {
-            return res.status(404).json({
-                success: false,
-                message: "No active attendance validation window found for this course code."
+        // 2. Read the stored session coordinates from the config file (or your DB)
+        let referenceLocation;
+        try {
+            const configData = fs.readFileSync(configPath, 'utf8');
+            referenceLocation = JSON.parse(configData);
+        } catch (fileError) {
+            return res.status(500).json({ message: "Failed to read active session coordinates." });
+        }
+
+        const lat1 = parseFloat(studentLatitude);
+        const lon1 = parseFloat(studentLongitude);
+        const lat2 = referenceLocation.latitude;
+        const lon2 = referenceLocation.longitude;
+        const allowedRadius = referenceLocation.radiusMeters || 10; // Defaults to 10m
+
+        // 3. Accurate Haversine Distance Calculation (in meters)
+        const R = 6371e3; // Earth's radius in METERS
+        const phi1 = (lat1 * Math.PI) / 180;
+        const phi2 = (lat2 * Math.PI) / 180;
+        const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+        const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const calculatedDistance = R * c; // Distance in meters
+
+        // 4. CRITICAL DEBUG LOGGING
+        // Look at your terminal when you run this to see the true variance!
+        console.log(`\n--- Location Verification Debug ---`);
+        console.log(`Student Loc: Lat ${lat1}, Lon ${lon1}`);
+        console.log(`Target Loc:  Lat ${lat2}, Lon ${lon2}`);
+        console.log(`Calculated Distance: ${calculatedDistance.toFixed(2)} meters`);
+        console.log(`Allowed Distance: ${allowedRadius} meters`);
+        console.log(`------------------------------------\n`);
+
+        // 5. Evaluation
+        if (calculatedDistance <= allowedRadius) {
+            return res.status(200).json({
+                verified: true,
+                message: "Location verified successfully!",
+                distance: calculatedDistance
+            });
+        } else {
+            return res.status(400).json({
+                verified: false,
+                message: `Verification failed. You are ${calculatedDistance.toFixed(1)} meters away from the designated spot.`,
+                distance: calculatedDistance
             });
         }
 
-        // Run coordinate computation
-        const distanceMeters = getDistanceInMeters(
-            parseFloat(studentLat),
-            parseFloat(studentLng),
-            parseFloat(activeSession.latitude),
-            parseFloat(activeSession.longitude)
-        );
-
-        console.log(`[Geofence Audit] Student is ${distanceMeters.toFixed(2)}m from target boundary.`);
-
-        // Apply strict 300-meter boundary rule
-        const MAX_GEOFENCE_RADIUS = 300;
-        if (distanceMeters > MAX_GEOFENCE_RADIUS) {
-            return res.status(403).json({
-                success: false,
-                message: `Verification failed. You are outside the classroom boundary (${distanceMeters.toFixed(1)} meters away).`
-            });
-        }
-
-        // Success! (Note: You can write log inserts to an Attendance database here)
-        return res.status(200).json({
-            success: true,
-            message: "Location verified successfully! Your lecture attendance has been recorded. 🎉"
-        });
-
-    } catch (error) {
-        console.error("Attendance verification crash:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Internal geofencing processing engine failure.",
-            error: error.message
-        });
+    } catch (globalError) {
+        console.error("❌ Verification Route Error:", globalError);
+        return res.status(500).json({ message: "Internal server error during verification." });
     }
 };
-
 module.exports = {
     protect,
     requireAdmin,
