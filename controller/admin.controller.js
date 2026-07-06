@@ -312,7 +312,7 @@ const verifyStudentLocation = async (req, res) => {
         const lon2 = parseFloat(activeSession.longitude);
 
         // Set a reasonable buffer zone (e.g., 40 meters) to account for indoor GPS drift
-        const allowedRadius = 40;
+        const allowedRadius = 200;
 
         // 3. Accurate Haversine Distance Calculation (in meters)
         const R = 6371e3; // Earth's radius in METERS
