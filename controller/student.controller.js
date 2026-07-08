@@ -125,6 +125,11 @@ const dashboard = async (req, res) => {
 // };
 const verifyStudentLocation = async (req, res) => {
     try {
+        console.log("📥 Incoming Student Payload:", req.body);
+        console.log("📂 Active Session Database Lock:", {
+            expectedBssid: activeSession?.expectedBssid,
+            beaconUuid: activeSession?.beaconUuid
+        });
         // 1. Get student's current GPS reading AND network/hardware identifiers
         const {
             studentLatitude,
