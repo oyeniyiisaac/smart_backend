@@ -21,6 +21,9 @@ const adminCreateSessionSchema = new mongoose.Schema(
         longitude: Number,
         latitude: Number,
         isSessionActive: Boolean,
+        expectedBssid: { type: String, default: null },
+        expectedSsid: { type: String, default: null },
+        beaconUuid: { type: String, default: null },
     },
     { timestamps: true },
 );

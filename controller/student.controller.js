@@ -1,4 +1,5 @@
 const StudentModel = require('../model/student.model')
+const AdminCreateSession = require('../model/adminCreateSession.model')
 const bcrypt = require('bcryptjs')
 const { Resend } = require('resend')
 const jwt = require('jsonwebtoken')
@@ -124,22 +125,26 @@ const dashboard = async (req, res) => {
 // };
 const verifyStudentLocation = async (req, res) => {
     try {
-        // 1. Get the student's current GPS reading AND the course they are checking into
-        const { studentLatitude, studentLongitude, courseCode } = req.body;
+        // 1. Get student's current GPS reading AND network/hardware identifiers
+        const {
+            studentLatitude,
+            studentLongitude,
+            courseCode,
+            scannedBssid, // 🆕 Sent from student device (Wi-Fi MAC Address)
+            scannedUuid   // 🆕 Sent from student device (Bluetooth Beacon UUID)
+        } = req.body;
 
         if (!studentLatitude || !studentLongitude || !courseCode) {
             return res.status(400).json({
-                message:
-                    "Missing required fields. Latitude, longitude, and course code are required.",
+                message: "Missing required fields. Latitude, longitude, and course code are required.",
             });
         }
 
-        // 2. Look up the ACTIVE session inside MongoDB instead of config.json
-        // (Assuming your model name is AdminCreateSession)
+        // 2. Look up the ACTIVE session inside MongoDB
         const activeSession = await AdminCreateSession.findOne({
             courseCode: courseCode,
             isSessionActive: true,
-        }).sort({ createdAt: -1 }); // Gets the most recently created one if duplicates exist
+        }).sort({ createdAt: -1 });
 
         if (!activeSession) {
             return res.status(404).json({
@@ -147,17 +152,40 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
+        // 🆕 STEP 2.5: HARDWARE / NETWORK LOCK VALIDATION (Safe Version)
+        let verifiedViaHardware = false;
+
+        // Using ?.toLowerCase() and safely checking if the values exist first
+        if (activeSession?.expectedBssid && scannedBssid) {
+            if (activeSession.expectedBssid.toString().toLowerCase().trim() === scannedBssid.toString().toLowerCase().trim()) {
+                verifiedViaHardware = true;
+            }
+        }
+
+        if (activeSession?.beaconUuid && scannedUuid) {
+            if (activeSession.beaconUuid.toString().toLowerCase().trim() === scannedUuid.toString().toLowerCase().trim()) {
+                verifiedViaHardware = true;
+            }
+        }
+
+        // If hardware matches, we skip the GPS math entirely and mark attendance!
+        if (verifiedViaHardware) {
+            console.log(`\n✅ [ATTENDANCE SUCCESS] Student verified via Hardware Lock for ${courseCode}\n`);
+            return res.status(200).json({
+                verified: true,
+                message: "Location verified successfully via Hardware Lock! Attendance marked.",
+                verifiedVia: "Hardware"
+            });
+        }
+
+        // 3. FALLBACK: Accurate Haversine Distance Calculation (If hardware check failed or fields were missing)
         const lat1 = parseFloat(studentLatitude);
         const lon1 = parseFloat(studentLongitude);
-
-        // Pull coordinates directly from the database document
         const lat2 = parseFloat(activeSession.latitude);
         const lon2 = parseFloat(activeSession.longitude);
 
-        // Set a reasonable buffer zone (e.g., 40 meters) to account for indoor GPS drift
-        const allowedRadius = 200;
+        const allowedRadius = 200; // 200 meters buffer zone
 
-        // 3. Accurate Haversine Distance Calculation (in meters)
         const R = 6371e3; // Earth's radius in METERS
         const phi1 = (lat1 * Math.PI) / 180;
         const phi2 = (lat2 * Math.PI) / 180;
@@ -172,27 +200,24 @@ const verifyStudentLocation = async (req, res) => {
             Math.sin(deltaLambda / 2);
 
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const calculatedDistance = R * c; // Distance in meters
+        const calculatedDistance = R * c;
 
-        // 4. DEBUG LOGGING - Check your terminal terminal to see the variance!
-        console.log(`\n--- [ATTENDANCE CHECK] ---`);
+        // 4. DEBUG LOGGING
+        console.log(`\n--- [ATTENDANCE CHECK FALLBACK TO GPS] ---`);
         console.log(`Course Code:     ${courseCode}`);
-        console.log(
-            `Student GPS:     Lat ${lat1.toFixed(6)}, Lon ${lon1.toFixed(6)}`,
-        );
-        console.log(
-            `Database Target: Lat ${lat2.toFixed(6)}, Lon ${lon2.toFixed(6)}`,
-        );
+        console.log(`Student GPS:     Lat ${lat1.toFixed(6)}, Lon ${lon1.toFixed(6)}`);
+        console.log(`Database Target: Lat ${lat2.toFixed(6)}, Lon ${lon2.toFixed(6)}`);
         console.log(`Calculated Gap:  ${calculatedDistance.toFixed(2)} meters`);
         console.log(`Allowed Radius:  ${allowedRadius} meters`);
-        console.log(`--------------------------\n`);
+        console.log(`------------------------------------------\n`);
 
-        // 5. Evaluation
+        // 5. GPS Evaluation
         if (calculatedDistance <= allowedRadius) {
             return res.status(200).json({
                 verified: true,
-                message: "Location verified successfully! Attendance marked.",
+                message: "Location verified successfully via GPS Geofence! Attendance marked.",
                 distance: calculatedDistance,
+                verifiedVia: "GPS"
             });
         } else {
             return res.status(400).json({

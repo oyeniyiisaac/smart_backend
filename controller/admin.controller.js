@@ -86,7 +86,7 @@ const loginAdmin = async (req, res) => {
         console.error(err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
-};
+}; 
 
 // POST /admin/invite [PROTECTED]
 const generateInvite = async (req, res) => {
@@ -182,7 +182,11 @@ const adminCreateSession = async (req, res) => {
     try {
         const {
             courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
-            semester, session, venue, mapUrl, longitude, latitude, isSessionActive
+            semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
+            // 🆕 Add the new network and hardware identifiers here
+            expectedBssid, 
+            expectedSsid,  
+            beaconUuid     
         } = req.body;
 
         const targetLat = latitude ? parseFloat(latitude) : 0;
@@ -190,10 +194,14 @@ const adminCreateSession = async (req, res) => {
         const allowedRadius = 10;
 
         try {
+            // 🆕 Expand the local config file payload to store Wi-Fi & Beacon tracking metrics
             const configData = {
                 latitude: targetLat,
                 longitude: targetLon,
-                radiusMeters: allowedRadius
+                radiusMeters: allowedRadius,
+                expectedBssid: expectedBssid || null,
+                expectedSsid: expectedSsid || null,
+                beaconUuid: beaconUuid || null
             };
             fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf8');
         } catch (fileError) {
@@ -201,6 +209,7 @@ const adminCreateSession = async (req, res) => {
             return res.status(500).json({ message: "Failed to write config", error: fileError.message });
         }
 
+        // 🆕 Make sure to add these fields to your Mongoose Schema (AdminCreateSession) if you want them saved per session in MongoDB
         const newSession = new AdminCreateSession({
             courseName,
             courseCode,
@@ -215,12 +224,16 @@ const adminCreateSession = async (req, res) => {
             longitude: targetLon,
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
+            // 🆕 Saving hardware constraints to the specific session document
+            expectedBssid,
+            expectedSsid,
+            beaconUuid
         });
 
         const savedSession = await newSession.save();
 
         return res.status(201).json({
-            message: "Session created and 10-meter geofence configuration updated successfully",
+            message: "Session created successfully with Geofence, Wi-Fi, and Beacon constraints.",
             data: savedSession,
         });
 
@@ -231,7 +244,6 @@ const adminCreateSession = async (req, res) => {
         }
     }
 };
-
 // GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
@@ -375,5 +387,4 @@ module.exports = {
     adminCreateSession,
     adminGetAllSession,
     getSingleSession,
-    verifyStudentLocation, // 👈 Exported to mount in your student router endpoints!
 };

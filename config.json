@@ -1,5 +1,8 @@
 {
   "latitude": 6.447432,
   "longitude": 3.3903,
-  "radiusMeters": 10
+  "radiusMeters": 10,
+  "expectedBssid": "54:1F:8D:2B:86:87",
+  "expectedSsid": "MTN_4G_2B8687",
+  "beaconUuid": "c9a646d3-9c61-4cd9-bc11-665e355601ef"
 }
