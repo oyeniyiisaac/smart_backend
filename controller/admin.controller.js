@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
+const facultyData = require('../Utils/api.js');
 
 const configPath = path.join(__dirname, '..', 'config.json');
 
@@ -40,6 +41,23 @@ const requireAdmin = (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ADMIN PROFILE & AUTHENTICATION ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// 🆕 GET /admin/faculty-data [PROTECTED or PUBLIC depending on your router layout]
+const getFacultyData = async (req, res) => {
+    try {
+        return res.status(200).json({
+            success: true,
+            data: facultyData
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: err.message
+        });
+    }
+};
 
 // GET /admin/dashboard [PROTECTED]
 const adminDashboard = async (req, res) => {
@@ -183,7 +201,6 @@ const adminCreateSession = async (req, res) => {
         const {
             courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
-            // 🆕 Add the new network and hardware identifiers here
             expectedBssid,
             expectedSsid,
             beaconUuid
@@ -194,7 +211,6 @@ const adminCreateSession = async (req, res) => {
         const allowedRadius = 300;
 
         try {
-            // 🆕 Expand the local config file payload to store Wi-Fi & Beacon tracking metrics
             const configData = {
                 latitude: targetLat,
                 longitude: targetLon,
@@ -209,7 +225,6 @@ const adminCreateSession = async (req, res) => {
             return res.status(500).json({ message: "Failed to write config", error: fileError.message });
         }
 
-        // 🆕 Make sure to add these fields to your Mongoose Schema (AdminCreateSession) if you want them saved per session in MongoDB
         const newSession = new AdminCreateSession({
             courseName,
             courseCode,
@@ -224,7 +239,6 @@ const adminCreateSession = async (req, res) => {
             longitude: targetLon,
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
-            // 🆕 Saving hardware constraints to the specific session document
             expectedBssid,
             expectedSsid,
             beaconUuid
@@ -244,6 +258,7 @@ const adminCreateSession = async (req, res) => {
         }
     }
 };
+
 // GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
@@ -286,96 +301,6 @@ const getSingleSession = async (req, res) => {
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STUDENT VERIFICATION SYSTEM (Haversine Formula Math Engine)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Internal utility: computes distance in meters over curved space
-// POST /student/verify-attendance
-
-// POST /admin/attendance-entry [PROTECTED]
-// Marks student as present for the current active session (manual override)
-// const recordStudentAttendance = async (req, res) => {
-//     try {
-//         const { matricNo, courseCode, level, session, semester } = req.body;
-
-//         // Find the most recent active session for this course and level
-//         const activeSession = await AdminCreateSession.findOne({
-//             courseCode: courseCode.toUpperCase(),
-//             level: level.toLowerCase(),
-//             semester: semester.toLowerCase(),
-//             isSessionActive: true,
-//         }).sort({ dateTimeFrom: -1 });
-
-//         if (!activeSession) {
-//             return res.status(400).json({
-//                 message: `No active session found for ${courseCode} - ${level}, ${semester}`,
-//             });
-//         }
-
-//         // Find student by matric number (assuming your User model has matricNo)
-//         // Adjust the model name 'User' if your actual student model is different
-//         const student = await User.findOne({ matricno: matricNo });
-
-//         if (!student) {
-//             return res.status(404).json({
-//                 message: `Student with matric number ${matricNo} not found.`,
-//             });
-//         }
-
-//         // Check if student is already marked present for this session
-//         const isAlreadyPresent = activeSession.attendance.some(entry =>
-//             entry.studentId.toString() === student._id.toString()
-//         );
-
-//         if (isAlreadyPresent) {
-//             return res.status(400).json({
-//                 message: `${student.firstname} is already marked as present for this session.`,
-//             });
-//         }
-
-//         // Mark student as present
-//         activeSession.attendance.push({
-//             studentId: student._id,
-//             matricno: matricNo,
-//             courseCode,
-//             courseName: activeSession.courseName,
-//             level,
-//             semester,
-//             session,
-//             status: 'present',
-//             timestamp: new Date(),
-//         });
-
-//         await activeSession.save();
-
-//         // Update student's attendance history if needed
-//         student.attendanceHistory.push({
-//             courseCode,
-//             courseName: activeSession.courseName,
-//             level,
-//             semester,
-//             session,
-//             status: 'present',
-//             date: new Date(),
-//             time: new Date().toLocaleTimeString(),
-//             location: 'manual_entry',
-//         });
-
-//         await student.save();
-
-//         return res.status(200).json({
-//             success: true,
-//             message: `${student.firstname} has been marked as present for ${activeSession.courseName}.`,
-//             data: activeSession,
-//             student,
-//         });
-
-//     } catch (error) {
-//         console.error('Error in manual attendance entry:', error);
-//         return res.status(500).json({ message: 'Failed to mark attendance' });
-//     }
-// };
 module.exports = {
     protect,
     requireAdmin,
@@ -387,4 +312,5 @@ module.exports = {
     adminCreateSession,
     adminGetAllSession,
     getSingleSession,
+    getFacultyData // 🆕 Added to exports
 };

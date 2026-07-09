@@ -9,7 +9,8 @@ const {
     adminCreateSession,
     adminGetAllSession,
     adminDashboard,
-    getSingleSession, // 👈 Imported the newly added geofence math verification engine
+    getSingleSession,
+    getFacultyData // 🆕 Imported your new controller function
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -44,10 +45,9 @@ router.post("/invite", protect, requireAdmin, generateInvite);
 // Revoke an active invite token immediately
 router.delete("/invite", protect, requireAdmin, revokeInvite);
 
-// ─────────────────────────────────────────────
-// Student Attendance Verification Route
-// ─────────────────────────────────────────────
-// Receives student's coordinates and checks them against the 10m class fence boundary
+// 🆕 Fetch the flattened faculty and department list for form dropdowns
+router.get("/faculty-list", protect, requireAdmin, getFacultyData);
+
 
 
 module.exports = router;
