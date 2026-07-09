@@ -86,7 +86,7 @@ const loginAdmin = async (req, res) => {
         console.error(err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
-}; 
+};
 
 // POST /admin/invite [PROTECTED]
 const generateInvite = async (req, res) => {
@@ -184,14 +184,14 @@ const adminCreateSession = async (req, res) => {
             courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
             // 🆕 Add the new network and hardware identifiers here
-            expectedBssid, 
-            expectedSsid,  
-            beaconUuid     
+            expectedBssid,
+            expectedSsid,
+            beaconUuid
         } = req.body;
 
         const targetLat = latitude ? parseFloat(latitude) : 0;
         const targetLon = longitude ? parseFloat(longitude) : 0;
-        const allowedRadius = 10;
+        const allowedRadius = 300;
 
         try {
             // 🆕 Expand the local config file payload to store Wi-Fi & Beacon tracking metrics
