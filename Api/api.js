@@ -120,7 +120,42 @@ const faculty = [
   },
   {
     id: 4,
-    facultyName: 'Faculty of Agr',
-    facultyCode: 'FOS',
+    facultyName: 'Faculty of Agriculture Sciences',
+    facultyCode: 'FAG',
+    departments: [
+      {
+        id: 1,
+        departmentName: 'Department of Agricultural Economics',
+        departmentCode: 'AGE'
+      },
+      {
+        id: 2,
+        departmentName: 'Department of Agricultural Extension and Rural Development',
+        departmentCode: 'AER'
+      },
+      {
+        id: 3,
+        departmentName: 'Department of Animal Nutrition and Biotechnology',
+        departmentCode: 'ANI'
+      },
+      {
+        id: 4,
+        departmentName: 'Department of Animal Production and Health',
+        departmentCode: 'AHP'
+      },
+      {
+        id: 5,
+        departmentName: 'Department of Crop and Environmental Production',
+        departmentCode: 'CRO'
+      },
+      {
+        id: 6,
+        departmentName: 'Department of Crop Production and Soil Science',
+        departmentCode: 'SDL'
+      }
+    ]
+  },
+  {
+
   }
 ]
