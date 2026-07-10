@@ -11,7 +11,7 @@ app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 app.use(cors())
 app.use('/', UserRoute)
-app.use('/admin', AdminRoute)
+app.use('/admin', AdminRoute)           
 
 mongoose.connect(URL)
     .then(() => {

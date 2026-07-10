@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken')
 const resend = new Resend(process.env.RESEND_API_KEY);
 const register = async (req, res) => {
     console.log(req.body)
-    const { firstname, lastname, email, matricno, password, confirmpassword } = req.body
+    const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body
     const form = new StudentModel(req.body)
     const findOne = await StudentModel.findOne({ matricno: req.body.matricno })
     const findEmail = await StudentModel.findOne({ email: req.body.email })
