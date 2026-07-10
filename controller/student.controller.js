@@ -90,7 +90,10 @@ const dashboard = async (req, res) => {
                 message: "Dashboard",
                 result: {
                     firstname: user.firstname,
+                    lastname: user.lastname || null,
                     matricno: user.matricno,
+                    department: user.department || null,
+                    faculty: user.faculty || null,
                     // any other fields you want on the dashboard
                 },
             });
@@ -100,32 +103,6 @@ const dashboard = async (req, res) => {
     })
 }
 
-// const dashboard = async (req, res) => {
-//     const authHeader = req.headers.authorization;
-//     const token = authHeader.split(" ")[1];
-
-//     jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
-//         if (err) {
-//             return res.status(401).json({ message: "Invalid token" });
-//         }
-//         try {
-//             const user = await User.findOne({ matricno: decoded.matricno }); // adjust to your model/ORM
-//             if (!user) {
-//                 return res.status(404).json({ message: "User not found" });
-//             }
-//             res.json({
-//                 message: "Dashboard",
-//                 result: {
-//                     firstname: user.firstname,
-//                     matricno: user.matricno,
-//                     // any other fields you want on the dashboard
-//                 },
-//             });
-//         } catch (error) {
-//             res.status(500).json({ message: "Server error" });
-//         }
-//     });
-// };
 const verifyStudentLocation = async (req, res) => {
     try {
         console.log("📥 Incoming Student Payload:", req.body);
