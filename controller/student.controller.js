@@ -9,9 +9,12 @@ const register = async (req, res) => {
     const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body
     const form = new StudentModel(req.body)
     const findOne = await StudentModel.findOne({ matricno: req.body.matricno })
+    if (findOne) {
+        return res.status(400).json({ message: "Matric number already exists" })
+    }
     const findEmail = await StudentModel.findOne({ email: req.body.email })
-    if (findOne || findEmail) {
-        return res.status(404).json({ message: "Student already exists" })
+    if (findEmail) {
+        return res.status(400).json({ message: "Email already exists" })
     }
     form.save()
         .then(async (result) => {
