@@ -18,8 +18,24 @@ const adminCreateSessionSchema = new mongoose.Schema(
         session: String,
         venue: String,
         mapUrl: String,
-        longitude: Number,
-        latitude: Number,
+        
+        // 🆕 Active Validation Strategy Toggles
+        useGpsVerification: {
+            type: Boolean,
+            default: true, // Matches your frontend initialization
+        },
+        useWifiVerification: {
+            type: Boolean,
+            default: false,
+        },
+        useBeaconVerification: {
+            type: Boolean,
+            default: false,
+        },
+
+        // Proximity metrics parameters
+        longitude: { type: Number, default: null },
+        latitude: { type: Number, default: null },
         isSessionActive: Boolean,
         expectedBssid: { type: String, default: null },
         expectedSsid: { type: String, default: null },

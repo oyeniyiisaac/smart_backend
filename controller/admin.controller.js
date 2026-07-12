@@ -196,14 +196,16 @@ const revokeInvite = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // POST /admin/create-session [PROTECTED]
+
+
 const adminCreateSession = async (req, res) => {
     try {
         const {
             courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
-            expectedBssid,
-            expectedSsid,
-            beaconUuid
+            // 🆕 Destructure validation strategy toggles from the client request payload
+            useGpsVerification, useWifiVerification, useBeaconVerification,
+            expectedBssid, expectedSsid, beaconUuid
         } = req.body;
 
         const targetLat = latitude ? parseFloat(latitude) : 0;
@@ -215,6 +217,10 @@ const adminCreateSession = async (req, res) => {
                 latitude: targetLat,
                 longitude: targetLon,
                 radiusMeters: allowedRadius,
+                // Save true/false flags down into your file config system too if needed
+                useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
+                useWifiVerification: useWifiVerification || false,
+                useBeaconVerification: useBeaconVerification || false,
                 expectedBssid: expectedBssid || null,
                 expectedSsid: expectedSsid || null,
                 beaconUuid: beaconUuid || null
@@ -239,15 +245,21 @@ const adminCreateSession = async (req, res) => {
             longitude: targetLon,
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
-            expectedBssid,
-            expectedSsid,
-            beaconUuid
+            
+            // 🆕 Map strategic options explicitly onto the saved Mongoose Document context
+            useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
+            useWifiVerification: useWifiVerification || false,
+            useBeaconVerification: useBeaconVerification || false,
+            
+            expectedBssid: useWifiVerification ? expectedBssid : null,
+            expectedSsid: useWifiVerification ? expectedSsid : null,
+            beaconUuid: useBeaconVerification ? beaconUuid : null
         });
 
         const savedSession = await newSession.save();
 
         return res.status(201).json({
-            message: "Session created successfully with Geofence, Wi-Fi, and Beacon constraints.",
+            message: "Session created successfully with designated verification constraints.",
             data: savedSession,
         });
 
@@ -289,7 +301,7 @@ const getSingleSession = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            data: session,
+            data: session, // This data block now emits the clean toggles to the client!
         });
     } catch (error) {
         console.error("Error fetching single session:", error);
@@ -300,6 +312,7 @@ const getSingleSession = async (req, res) => {
         });
     }
 };
+
 
 module.exports = {
     protect,
