@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs')
 const { Resend } = require('resend')
 const jwt = require('jsonwebtoken')
 const resend = new Resend(process.env.RESEND_API_KEY);
+const AttendanceRecord = require('../model/attendanceRecord.model')
 const register = async (req, res) => {
     console.log(req.body)
     const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body
@@ -149,10 +150,13 @@ const verifyStudentLocation = async (req, res) => {
             beaconUuid: activeSession?.beaconUuid
         });
 
-        // Get the student's identifier (matric number) from req.user (populated by your auth middleware)
-        const studentMatric = req.user?.matricNumber; 
+        // 🔐 AUTHENTICATION IDENTITY EXTRACTION
+        // If your JWT middleware populates req.user, extract their ID/matric here:
+        const studentMatric = req.user?.matricNumber || req.user?.id; 
         if (!studentMatric) {
-            return res.status(401).json({ message: "Unauthorized. Student identification missing." });
+            return res.status(401).json({ 
+                message: "Unauthorized. Student identification missing from token." 
+            });
         }
 
         // 4. HARDWARE / NETWORK LOCK VALIDATION
@@ -170,12 +174,12 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        // 🌟 SUCCESS BRANCH A: Hardware match
+        // 🌟 SUCCESS BRANCH A: Hardware Lock Matches
         if (verifiedViaHardware) {
             console.log(`\n✅ [ATTENDANCE SUCCESS] Student ${studentMatric} verified via Hardware Lock for ${courseCode}\n`);
             
             try {
-                // 🆕 Save check-in record to database
+                // Save the dynamic log entry into MongoDB
                 await AttendanceRecord.create({
                     session: activeSession._id,
                     courseCode: courseCode,
@@ -183,7 +187,7 @@ const verifyStudentLocation = async (req, res) => {
                     verifiedVia: "Hardware"
                 });
             } catch (dbError) {
-                // 11000 is MongoDB's duplicate key error code (stops double submissions)
+                // MongoDB code 11000 handles unique index crashes (prevents double submissions)
                 if (dbError.code === 11000) {
                     return res.status(400).json({
                         verified: false,
@@ -231,10 +235,10 @@ const verifyStudentLocation = async (req, res) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const calculatedDistance = R * c;
 
-        // 🌟 SUCCESS BRANCH B: GPS Evaluation Match
+        // 🌟 SUCCESS BRANCH B: GPS Location Matches
         if (calculatedDistance <= allowedRadius) {
             try {
-                // 🆕 Save check-in record to database
+                // Save the dynamic log entry into MongoDB
                 await AttendanceRecord.create({
                     session: activeSession._id,
                     courseCode: courseCode,
