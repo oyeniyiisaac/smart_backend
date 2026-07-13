@@ -149,6 +149,18 @@ const verifyStudentLocation = async (req, res) => {
             expectedBssid: activeSession?.expectedBssid,
             beaconUuid: activeSession?.beaconUuid
         });
+        
+        // Check for session timeout (Grace Period)
+        const checkInTime = new Date();
+        const sessionEnd = new Date(activeSession.dateTimeTo);
+        
+        if (checkInTime > sessionEnd) {
+            return res.status(400).json({ 
+                message: "Attendance window has closed. You are late.",
+                isLate: true,
+                verified: false 
+            });
+        }
 
         // 🔐 AUTHENTICATION IDENTITY EXTRACTION
         // If your JWT middleware populates req.user, extract their ID/matric here:
