@@ -198,12 +198,14 @@ const revokeInvite = async (req, res) => {
 // POST /admin/create-session [PROTECTED]
 
 
-const adminCreateSession = async (req, res) => {
+// ✅ RENAME: Changed function name to 'handleAdminCreateSession' to completely 
+// prevent conflicts with the Mongoose model 'AdminCreateSession'
+const handleAdminCreateSession = async (req, res) => {
     try {
         const {
             courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
-            // 🆕 Destructure validation strategy toggles from the client request payload
+            // Destructure validation strategy toggles from the client request payload
             useGpsVerification, useWifiVerification, useBeaconVerification,
             expectedBssid, expectedSsid, beaconUuid
         } = req.body;
@@ -217,7 +219,7 @@ const adminCreateSession = async (req, res) => {
                 latitude: targetLat,
                 longitude: targetLon,
                 radiusMeters: allowedRadius,
-                // Save true/false flags down into your file config system too if needed
+                // Save true/false flags down into your file config system
                 useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
                 useWifiVerification: useWifiVerification || false,
                 useBeaconVerification: useBeaconVerification || false,
@@ -231,6 +233,7 @@ const adminCreateSession = async (req, res) => {
             return res.status(500).json({ message: "Failed to write config", error: fileError.message });
         }
 
+        // ✅ SAFE: Instantiating the Mongoose schema here will now work perfectly
         const newSession = new AdminCreateSession({
             courseName,
             courseCode,
@@ -246,7 +249,7 @@ const adminCreateSession = async (req, res) => {
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
             
-            // 🆕 Map strategic options explicitly onto the saved Mongoose Document context
+            // Map strategic options explicitly onto the saved Mongoose Document context
             useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
             useWifiVerification: useWifiVerification || false,
             useBeaconVerification: useBeaconVerification || false,
@@ -322,7 +325,7 @@ module.exports = {
     createAdmin,
     loginAdmin,
     adminDashboard,
-    adminCreateSession,
+    handleAdminCreateSession,
     adminGetAllSession,
     getSingleSession,
     getFacultyData // 🆕 Added to exports

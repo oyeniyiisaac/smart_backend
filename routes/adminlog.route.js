@@ -6,11 +6,11 @@ const {
     revokeInvite,
     createAdmin,
     loginAdmin,
-    adminCreateSession,
     adminGetAllSession,
     adminDashboard,
     getSingleSession,
-    getFacultyData // 🆕 Imported your new controller function
+    getFacultyData,
+    handleAdminCreateSession
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -37,7 +37,7 @@ router.get("/monitor/:id", protect, requireAdmin, getSingleSession);
 router.get("/dashboard", protect, requireAdmin, adminDashboard);
 
 // Setup a new active class session window
-router.post("/createsession", protect, requireAdmin, adminCreateSession);
+router.post("/createsession", protect, requireAdmin, handleAdminCreateSession);
 
 // Generate a new registration invite token
 router.post("/invite", protect, requireAdmin, generateInvite);
