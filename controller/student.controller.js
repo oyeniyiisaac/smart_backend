@@ -107,22 +107,32 @@ const verifyStudentLocation = async (req, res) => {
     try {
         console.log("📥 Incoming Student Payload:", req.body);
         
-        // 1. Get student's current GPS reading AND network/hardware identifiers
+        // 1. Destructure all possible parameters, including the chosen strategy
         const {
             studentLatitude,
             studentLongitude,
             courseCode,
-            scannedBssid, // Sent from student device (Wi-Fi MAC Address)
-            scannedUuid   // Sent from student device (Bluetooth Beacon UUID)
+            scannedBssid, 
+            scannedUuid,
+            verificationMethodChosen // 🆕 Sent from client ('gps', 'wifi', or 'beacon')
         } = req.body;
 
-        if (!studentLatitude || !studentLongitude || !courseCode) {
-            return res.status(400).json({
-                message: "Missing required fields. Latitude, longitude, and course code are required.",
-            });
+        // 2. Dynamic Validation
+        if (!courseCode) {
+            return res.status(400).json({ message: "Course code is required." });
         }
 
-        // 2. Look up the ACTIVE session inside MongoDB
+        // Only demand GPS coordinates if the chosen method is explicitly 'gps' 
+        // OR if hardware credentials aren't provided as a fallback.
+        if (verificationMethodChosen === 'gps' || (!scannedBssid && !scannedUuid)) {
+            if (studentLatitude === undefined || studentLongitude === undefined) {
+                return res.status(400).json({
+                    message: "GPS Verification requires your active Latitude and Longitude.",
+                });
+            }
+        }
+
+        // 3. Look up the ACTIVE session inside MongoDB
         const activeSession = await AdminCreateSession.findOne({
             courseCode: courseCode,
             isSessionActive: true,
@@ -134,13 +144,12 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // ✅ FIXED: Logged safely AFTER activeSession has been queried and found
         console.log("📂 Active Session Database Lock:", {
             expectedBssid: activeSession?.expectedBssid,
             beaconUuid: activeSession?.beaconUuid
         });
 
-        // 2.5: HARDWARE / NETWORK LOCK VALIDATION
+        // 4. HARDWARE / NETWORK LOCK VALIDATION
         let verifiedViaHardware = false;
 
         if (activeSession?.expectedBssid && scannedBssid) {
@@ -155,7 +164,7 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        // If hardware matches, we skip the GPS math entirely and mark attendance!
+        // If hardware matches, skip GPS checks entirely and mark attendance
         if (verifiedViaHardware) {
             console.log(`\n✅ [ATTENDANCE SUCCESS] Student verified via Hardware Lock for ${courseCode}\n`);
             return res.status(200).json({
@@ -165,14 +174,21 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 3. FALLBACK: Accurate Haversine Distance Calculation (Safe Parser Fallback)
+        // If they tried to verify via Hardware but the values didn't match:
+        if (verificationMethodChosen === 'wifi' || verificationMethodChosen === 'beacon') {
+            return res.status(400).json({
+                verified: false,
+                message: "Hardware verification failed. You are not connected to the classroom router or near the beacon."
+            });
+        }
+
+        // 5. FALLBACK: Accurate Haversine Distance Calculation (GPS)
         const lat1 = parseFloat(studentLatitude) || 0;
         const lon1 = parseFloat(studentLongitude) || 0;
         const lat2 = parseFloat(activeSession.latitude) || 0;
         const lon2 = parseFloat(activeSession.longitude) || 0;
 
         const allowedRadius = 200; // 200 meters buffer zone
-
         const R = 6371e3; // Earth's radius in METERS
         const phi1 = (lat1 * Math.PI) / 180;
         const phi2 = (lat2 * Math.PI) / 180;
@@ -189,16 +205,7 @@ const verifyStudentLocation = async (req, res) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const calculatedDistance = R * c;
 
-        // 4. DEBUG LOGGING
-        console.log(`\n--- [ATTENDANCE CHECK FALLBACK TO GPS] ---`);
-        console.log(`Course Code:     ${courseCode}`);
-        console.log(`Student GPS:     Lat ${lat1.toFixed(6)}, Lon ${lon1.toFixed(6)}`);
-        console.log(`Database Target: Lat ${lat2.toFixed(6)}, Lon ${lon2.toFixed(6)}`);
-        console.log(`Calculated Gap:  ${calculatedDistance.toFixed(2)} meters`);
-        console.log(`Allowed Radius:  ${allowedRadius} meters`);
-        console.log(`------------------------------------------\n`);
-
-        // 5. GPS Evaluation
+        // 6. GPS Evaluation
         if (calculatedDistance <= allowedRadius) {
             return res.status(200).json({
                 verified: true,
@@ -215,9 +222,7 @@ const verifyStudentLocation = async (req, res) => {
         }
     } catch (globalError) {
         console.error("❌ Verification Route Error:", globalError);
-        return res
-            .status(500)
-            .json({ message: "Internal server error during verification." });
+        return res.status(500).json({ message: "Internal server error during verification." });
     }
 };
 
