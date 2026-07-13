@@ -114,7 +114,7 @@ const verifyStudentLocation = async (req, res) => {
             courseCode,
             scannedBssid, 
             scannedUuid,
-            verificationMethodChosen // 🆕 Sent from client ('gps', 'wifi', or 'beacon')
+            verificationMethodChosen // Sent from client ('gps', 'wifi', or 'beacon')
         } = req.body;
 
         // 2. Dynamic Validation
@@ -149,6 +149,12 @@ const verifyStudentLocation = async (req, res) => {
             beaconUuid: activeSession?.beaconUuid
         });
 
+        // Get the student's identifier (matric number) from req.user (populated by your auth middleware)
+        const studentMatric = req.user?.matricNumber; 
+        if (!studentMatric) {
+            return res.status(401).json({ message: "Unauthorized. Student identification missing." });
+        }
+
         // 4. HARDWARE / NETWORK LOCK VALIDATION
         let verifiedViaHardware = false;
 
@@ -164,9 +170,29 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        // If hardware matches, skip GPS checks entirely and mark attendance
+        // 🌟 SUCCESS BRANCH A: Hardware match
         if (verifiedViaHardware) {
-            console.log(`\n✅ [ATTENDANCE SUCCESS] Student verified via Hardware Lock for ${courseCode}\n`);
+            console.log(`\n✅ [ATTENDANCE SUCCESS] Student ${studentMatric} verified via Hardware Lock for ${courseCode}\n`);
+            
+            try {
+                // 🆕 Save check-in record to database
+                await AttendanceRecord.create({
+                    session: activeSession._id,
+                    courseCode: courseCode,
+                    studentMatric: studentMatric,
+                    verifiedVia: "Hardware"
+                });
+            } catch (dbError) {
+                // 11000 is MongoDB's duplicate key error code (stops double submissions)
+                if (dbError.code === 11000) {
+                    return res.status(400).json({
+                        verified: false,
+                        message: "You have already marked attendance for this session!"
+                    });
+                }
+                throw dbError;
+            }
+
             return res.status(200).json({
                 verified: true,
                 message: "Location verified successfully via Hardware Lock! Attendance marked.",
@@ -205,8 +231,26 @@ const verifyStudentLocation = async (req, res) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const calculatedDistance = R * c;
 
-        // 6. GPS Evaluation
+        // 🌟 SUCCESS BRANCH B: GPS Evaluation Match
         if (calculatedDistance <= allowedRadius) {
+            try {
+                // 🆕 Save check-in record to database
+                await AttendanceRecord.create({
+                    session: activeSession._id,
+                    courseCode: courseCode,
+                    studentMatric: studentMatric,
+                    verifiedVia: "GPS"
+                });
+            } catch (dbError) {
+                if (dbError.code === 11000) {
+                    return res.status(400).json({
+                        verified: false,
+                        message: "You have already marked attendance for this session!"
+                    });
+                }
+                throw dbError;
+            }
+
             return res.status(200).json({
                 verified: true,
                 message: "Location verified successfully via GPS Geofence! Attendance marked.",
@@ -225,5 +269,4 @@ const verifyStudentLocation = async (req, res) => {
         return res.status(500).json({ message: "Internal server error during verification." });
     }
 };
-
 module.exports = { register, signin, login, dashboard, verifyStudentLocation }

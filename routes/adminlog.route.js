@@ -10,7 +10,8 @@ const {
     adminDashboard,
     getSingleSession,
     getFacultyData,
-    handleAdminCreateSession
+    handleAdminCreateSession,
+    getSessionAttendanceCount
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -47,6 +48,10 @@ router.delete("/invite", protect, requireAdmin, revokeInvite);
 
 // 🆕 Fetch the flattened faculty and department list for form dropdowns
 router.get("/faculty-list", protect, requireAdmin, getFacultyData);
+
+// Fetch attendance count for a specific session
+router.get('/session-attendance/:sessionId', getSessionAttendanceCount);
+
 
 
 

@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
+const AttendanceRecord = require('../model/attendanceRecord.model.js')
 const facultyData = require('../Utils/api.js');
 
 const configPath = path.join(__dirname, '..', 'config.json');
@@ -316,6 +317,29 @@ const getSingleSession = async (req, res) => {
     }
 };
 
+const getSessionAttendanceCount = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+
+        // 1. Count how many records exist for this active session
+        const totalStudents = await AttendanceRecord.countDocuments({ session: sessionId });
+
+        // 2. Fetch the list of students who are present
+        const presentStudents = await AttendanceRecord.find({ session: sessionId })
+            .select('studentMatric verifiedVia verifiedAt');
+
+        return res.status(200).json({
+            success: true,
+            totalStudents,
+            presentStudents
+        });
+    } catch (error) {
+        console.error("❌ Error fetching attendance count:", error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+};
+
+
 
 module.exports = {
     protect,
@@ -328,5 +352,6 @@ module.exports = {
     handleAdminCreateSession,
     adminGetAllSession,
     getSingleSession,
-    getFacultyData // 🆕 Added to exports
+    getFacultyData,
+    getSessionAttendanceCount
 };
