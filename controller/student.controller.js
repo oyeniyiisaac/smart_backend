@@ -106,17 +106,14 @@ const dashboard = async (req, res) => {
 const verifyStudentLocation = async (req, res) => {
     try {
         console.log("📥 Incoming Student Payload:", req.body);
-        console.log("📂 Active Session Database Lock:", {
-            expectedBssid: activeSession?.expectedBssid,
-            beaconUuid: activeSession?.beaconUuid
-        });
+        
         // 1. Get student's current GPS reading AND network/hardware identifiers
         const {
             studentLatitude,
             studentLongitude,
             courseCode,
-            scannedBssid, // 🆕 Sent from student device (Wi-Fi MAC Address)
-            scannedUuid   // 🆕 Sent from student device (Bluetooth Beacon UUID)
+            scannedBssid, // Sent from student device (Wi-Fi MAC Address)
+            scannedUuid   // Sent from student device (Bluetooth Beacon UUID)
         } = req.body;
 
         if (!studentLatitude || !studentLongitude || !courseCode) {
@@ -137,10 +134,15 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 🆕 STEP 2.5: HARDWARE / NETWORK LOCK VALIDATION (Safe Version)
+        // ✅ FIXED: Logged safely AFTER activeSession has been queried and found
+        console.log("📂 Active Session Database Lock:", {
+            expectedBssid: activeSession?.expectedBssid,
+            beaconUuid: activeSession?.beaconUuid
+        });
+
+        // 2.5: HARDWARE / NETWORK LOCK VALIDATION
         let verifiedViaHardware = false;
 
-        // Using ?.toLowerCase() and safely checking if the values exist first
         if (activeSession?.expectedBssid && scannedBssid) {
             if (activeSession.expectedBssid.toString().toLowerCase().trim() === scannedBssid.toString().toLowerCase().trim()) {
                 verifiedViaHardware = true;
@@ -163,11 +165,11 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 3. FALLBACK: Accurate Haversine Distance Calculation (If hardware check failed or fields were missing)
-        const lat1 = parseFloat(studentLatitude);
-        const lon1 = parseFloat(studentLongitude);
-        const lat2 = parseFloat(activeSession.latitude);
-        const lon2 = parseFloat(activeSession.longitude);
+        // 3. FALLBACK: Accurate Haversine Distance Calculation (Safe Parser Fallback)
+        const lat1 = parseFloat(studentLatitude) || 0;
+        const lon1 = parseFloat(studentLongitude) || 0;
+        const lat2 = parseFloat(activeSession.latitude) || 0;
+        const lon2 = parseFloat(activeSession.longitude) || 0;
 
         const allowedRadius = 200; // 200 meters buffer zone
 
