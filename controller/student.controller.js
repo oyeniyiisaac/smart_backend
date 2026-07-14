@@ -175,8 +175,26 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 6. Hardware Verification Strategy
+        // ⏱️ STEP 2: TIME RANGE / EXPIRATION CHECK 
+        // Checks if the current time has passed the allowed duration (e.g., 1 hour since creation)
+        const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour in milliseconds
+        const currentTime = new Date();
+        const sessionAge = currentTime - new Date(activeSession.createdAt);
+
+        if (sessionAge > sessionDurationLimit) {
+            // Automatically close the expired session in the database
+            activeSession.isSessionActive = false;
+            await activeSession.save();
+
+            return res.status(410).json({
+                verified: false,
+                message: "This attendance session has expired and is now closed.",
+            });
+        }
+
+        // 6. Hardware Verification Strategy (Code continues as normal below...)
         let verifiedViaHardware = false;
+
 
         if (activeSession?.expectedBssid && scannedBssid) {
             if (activeSession.expectedBssid.toString().toLowerCase().trim() === scannedBssid.toString().toLowerCase().trim()) {

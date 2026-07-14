@@ -338,6 +338,35 @@ const getSessionAttendanceCount = async (req, res) => {
         return res.status(500).json({ message: "Internal server error." });
     }
 };
+const closeAttendanceSession = async (req, res) => {
+    try {
+        const { courseCode } = req.body; // Or req.params.courseCode
+
+        if (!courseCode) {
+            return res.status(400).json({ message: "Course code is required." });
+        }
+
+        // Find the active session and turn it off
+        const updatedSession = await AdminCreateSession.findOneAndUpdate(
+            { courseCode: courseCode, isSessionActive: true },
+            { isSessionActive: false },
+            { new: true }
+        );
+
+        if (!updatedSession) {
+            return res.status(404).json({ message: "No active session found for this course." });
+        }
+
+        return res.status(200).json({
+            message: `Attendance session for ${courseCode} has been successfully closed by the Admin.`,
+            session: updatedSession
+        });
+
+    } catch (error) {
+        console.error("❌ Error closing session:", error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+};
 
 
 
@@ -353,5 +382,6 @@ module.exports = {
     adminGetAllSession,
     getSingleSession,
     getFacultyData,
-    getSessionAttendanceCount
+    getSessionAttendanceCount,
+    closeAttendanceSession
 };
