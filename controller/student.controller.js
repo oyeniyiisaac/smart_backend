@@ -5,6 +5,7 @@ const { Resend } = require('resend')
 const jwt = require('jsonwebtoken')
 const resend = new Resend(process.env.RESEND_API_KEY);
 const AttendanceRecord = require('../model/attendanceRecord.model')
+
 const register = async (req, res) => {
     console.log(req.body)
     const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body
@@ -36,8 +37,8 @@ const register = async (req, res) => {
             console.log(err)
         })
     res.json({ message: 'Registration successful', data: req.body })
-    // res.send(req.body)
 }
+
 const signin = (req, res) => {
     res.render('/signin')
 }
@@ -58,11 +59,10 @@ const login = async (req, res) => {
                 firstname: student.firstname,
                 lastname: student.lastname,
                 email: student.email,
-                matricno: student.matricno
+                matricno: student.matricno // Packed securely into the token payload
             }
             const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' })
             res.json({ message: 'Sign in successful', data: { id: student._id }, token: token })
-            // console.log(token)
         }
     } catch (error) {
         console.log(error)
@@ -71,9 +71,6 @@ const login = async (req, res) => {
 }
 
 const dashboard = async (req, res) => {
-    // const authUser = req.user.authorization
-    // console.log(authUser.id )
-    // const authMatricno = authUser.matricno
     const authHeader = req.headers.authorization
     console.log(authHeader)
     const token = authHeader.split(' ')[1]
@@ -83,7 +80,7 @@ const dashboard = async (req, res) => {
             return res.status(401).json({ message: "Invalid token" })
         }
         try {
-            const user = await StudentModel.findOne({ matricno: authUser.matricno }); // adjust to your model/ORM
+            const user = await StudentModel.findOne({ matricno: authUser.matricno });
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
@@ -95,7 +92,6 @@ const dashboard = async (req, res) => {
                     matricno: user.matricno,
                     department: user.department || null,
                     faculty: user.faculty || null,
-                    // any other fields you want on the dashboard
                 },
             });
         } catch (error) {
@@ -106,34 +102,68 @@ const dashboard = async (req, res) => {
 
 const verifyStudentLocation = async (req, res) => {
     try {
+        // 1. Extract and check the Authorization Header
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ message: "Access denied. No token provided." });
+        }
+
+        // 🧹 Clean up any potential client-side line breaks (\n, \r) or multi-spaces down into a clean single space
+        const cleanHeader = authHeader.replace(/[\r\n]+/g, ' ').trim();
+
+        if (!cleanHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: "Access denied. Invalid token formatting prefix." });
+        }
+
+        // Safely extract the sanitized signature token payload string
+        const token = cleanHeader.split(' ')[1];
+
+        // 2. Synchronous JWT Verification
+        let authUser;
+        try {
+            authUser = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (jwtError) {
+            console.error("❌ JWT Signature Verification Failed:", jwtError.message);
+            return res.status(401).json({ message: "Invalid or expired token structure." });
+        }
+
+        console.log("🕵️‍♂️ Decoded authUser payload:", authUser);
+
+        // 3. Identification Fallback Extractors
+        // 🔐 AUTHENTICATION IDENTITY EXTRACTION
+        // Use the decoded `authUser` object we got from jwt.verify!
+        const studentMatric = authUser?.matricno || authUser?.id || authUser?._id;
+
+        if (!studentMatric) {
+            return res.status(401).json({
+                message: "Unauthorized. Student identification missing from token."
+            });
+        }
+        // 4. Destructure the request body parameters
         console.log("📥 Incoming Student Payload:", req.body);
-        
-        // 1. Destructure all possible parameters, including the chosen strategy
         const {
             studentLatitude,
             studentLongitude,
             courseCode,
-            scannedBssid, 
+            scannedBssid,
             scannedUuid,
-            verificationMethodChosen // Sent from client ('gps', 'wifi', or 'beacon')
+            verificationMethodChosen
         } = req.body;
 
-        // 2. Dynamic Validation
+        // Dynamic Validation
         if (!courseCode) {
             return res.status(400).json({ message: "Course code is required." });
         }
 
-        // Only demand GPS coordinates if the chosen method is explicitly 'gps' 
-        // OR if hardware credentials aren't provided as a fallback.
         if (verificationMethodChosen === 'gps' || (!scannedBssid && !scannedUuid)) {
             if (studentLatitude === undefined || studentLongitude === undefined) {
                 return res.status(400).json({
-                    message: "GPS Verification requires your active Latitude and Longitude.",
+                    message: "GPS Verification requires active Latitude and Longitude.",
                 });
             }
         }
 
-        // 3. Look up the ACTIVE session inside MongoDB
+        // 5. Look up active session
         const activeSession = await AdminCreateSession.findOne({
             courseCode: courseCode,
             isSessionActive: true,
@@ -145,33 +175,7 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        console.log("📂 Active Session Database Lock:", {
-            expectedBssid: activeSession?.expectedBssid,
-            beaconUuid: activeSession?.beaconUuid
-        });
-        
-        // Check for session timeout (Grace Period)
-        const checkInTime = new Date();
-        const sessionEnd = new Date(activeSession.dateTimeTo);
-        
-        if (checkInTime > sessionEnd) {
-            return res.status(400).json({ 
-                message: "Attendance window has closed. You are late.",
-                isLate: true,
-                verified: false 
-            });
-        }
-
-        // 🔐 AUTHENTICATION IDENTITY EXTRACTION
-        // If your JWT middleware populates req.user, extract their ID/matric here:
-        const studentMatric = req.user?.matricNumber || req.user?.id; 
-        if (!studentMatric) {
-            return res.status(401).json({ 
-                message: "Unauthorized. Student identification missing from token." 
-            });
-        }
-
-        // 4. HARDWARE / NETWORK LOCK VALIDATION
+        // 6. Hardware Verification Strategy
         let verifiedViaHardware = false;
 
         if (activeSession?.expectedBssid && scannedBssid) {
@@ -186,12 +190,11 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        // 🌟 SUCCESS BRANCH A: Hardware Lock Matches
+        // Success Path A: Hardware Match
         if (verifiedViaHardware) {
             console.log(`\n✅ [ATTENDANCE SUCCESS] Student ${studentMatric} verified via Hardware Lock for ${courseCode}\n`);
-            
+
             try {
-                // Save the dynamic log entry into MongoDB
                 await AttendanceRecord.create({
                     session: activeSession._id,
                     courseCode: courseCode,
@@ -199,7 +202,6 @@ const verifyStudentLocation = async (req, res) => {
                     verifiedVia: "Hardware"
                 });
             } catch (dbError) {
-                // MongoDB code 11000 handles unique index crashes (prevents double submissions)
                 if (dbError.code === 11000) {
                     return res.status(400).json({
                         verified: false,
@@ -216,7 +218,7 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // If they tried to verify via Hardware but the values didn't match:
+        // Hardware fail response
         if (verificationMethodChosen === 'wifi' || verificationMethodChosen === 'beacon') {
             return res.status(400).json({
                 verified: false,
@@ -224,14 +226,14 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 5. FALLBACK: Accurate Haversine Distance Calculation (GPS)
+        // 7. Fallback: Haversine Calculation (GPS)
         const lat1 = parseFloat(studentLatitude) || 0;
         const lon1 = parseFloat(studentLongitude) || 0;
         const lat2 = parseFloat(activeSession.latitude) || 0;
         const lon2 = parseFloat(activeSession.longitude) || 0;
 
-        const allowedRadius = 200; // 200 meters buffer zone
-        const R = 6371e3; // Earth's radius in METERS
+        const allowedRadius = 200;
+        const R = 6371e3; // Earth's radius in meters
         const phi1 = (lat1 * Math.PI) / 180;
         const phi2 = (lat2 * Math.PI) / 180;
         const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
@@ -247,10 +249,9 @@ const verifyStudentLocation = async (req, res) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const calculatedDistance = R * c;
 
-        // 🌟 SUCCESS BRANCH B: GPS Location Matches
+        // Success Path B: GPS Match
         if (calculatedDistance <= allowedRadius) {
             try {
-                // Save the dynamic log entry into MongoDB
                 await AttendanceRecord.create({
                     session: activeSession._id,
                     courseCode: courseCode,
@@ -280,9 +281,11 @@ const verifyStudentLocation = async (req, res) => {
                 distance: calculatedDistance,
             });
         }
+
     } catch (globalError) {
         console.error("❌ Verification Route Error:", globalError);
         return res.status(500).json({ message: "Internal server error during verification." });
     }
 };
+
 module.exports = { register, signin, login, dashboard, verifyStudentLocation }

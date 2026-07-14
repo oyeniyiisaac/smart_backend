@@ -1,5 +1,6 @@
 const express = require('express')
 const { register, signin, login, dashboard, verifyStudentLocation } = require('../controller/student.controller')
+// const verifyToken = require('../middleware.auth');
 const router = express.Router()
 
 router.get('/signin', signin)
