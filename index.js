@@ -2,13 +2,14 @@ const express = require('express')
 const app = express()
 require('dotenv').config()
 const cors = require('cors')
-const cron = require('node-cron');  
+const cron = require('node-cron');
 const mongoose = require('mongoose')
 const URL = process.env.MONGO_URL
 const port = process.env.port
 const UserRoute = require('./routes/student.route')
 const AdminRoute = require('./routes/adminlog.route')
 const AdminCreateSession = require('./model/adminCreateSession.model')
+const { markAbsentees } = require('./controllers/student.controller'); // Adjust path to your controller
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 app.use(cors())
@@ -26,25 +27,33 @@ mongoose.connect(URL)
 
 
 function startCleanupJob() {
-    // Run every 5 minutes
+    // Run every 5 minutes to check for expired sessions
     cron.schedule('*/5 * * * *', async () => {
         try {
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // Adjust duration as needed
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // Adjust session limit as needed
+            
+            // 1. Find all active sessions that have been open for longer than 1 hour
+            const expiredSessions = await AdminCreateSession.find({ 
+                isSessionActive: true, 
+                createdAt: { $lt: oneHourAgo } 
+            });
 
-            // Turn off any sessions older than 1 hour that are still marked active
-            const result = await AdminCreateSession.updateMany(
-                {
-                    isSessionActive: true,
-                    createdAt: { $lt: oneHourAgo }
-                },
-                {
-                    isSessionActive: false
+            if (expiredSessions.length > 0) {
+                console.log(`🧹 Found ${expiredSessions.length} expired session(s) to close.`);
+                
+                // 2. Loop through each expired session to close it and record absences
+                for (const session of expiredSessions) {
+                    session.isSessionActive = false;
+                    await session.save();
+
+                    console.log(`🔒 Closed expired session for ${session.courseCode}. Processing absentees...`);
+                    
+                    // 3. Trigger the absentee generator for this specific session
+                    await markAbsentees(session._id, session.courseCode);
                 }
-            );
-
-            if (result.modifiedCount > 0) {
-                console.log(`🧹 [AUTO-CLEANUP] Closed ${result.modifiedCount} expired attendance sessions.`);
+                console.log("✅ Auto-cleanup and absentee run finished successfully.");
             }
+            
         } catch (err) {
             console.error("❌ Auto-Cleanup Cron Error:", err);
         }

@@ -357,6 +357,9 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(404).json({ message: "No active session found for this course." });
         }
 
+        // 🚨 TRIGGER ABSENTEE GENERATOR
+        await markAbsentees(updatedSession._id, updatedSession.courseCode);
+
         return res.status(200).json({
             message: `Attendance session for ${courseCode} has been successfully closed by the Admin.`,
             session: updatedSession

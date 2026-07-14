@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const AttendanceRecordSchema = new mongoose.Schema({
     session: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'AdminCreateSession', // Links directly to the active lecture session
+        ref: 'AdminCreateSession',
         required: true
     },
     courseCode: {
@@ -11,20 +11,22 @@ const AttendanceRecordSchema = new mongoose.Schema({
         required: true
     },
     studentMatric: {
-        type: String, // E.g., "2022003337"
+        type: String,
         required: true
     },
     verifiedVia: {
-        type: String, // 'GPS' or 'Hardware'
-        required: true
+        type: String,
+        enum: ['GPS', 'Hardware', 'None'], // 'None' for absent
+        default: 'None'
     },
-    verifiedAt: {
-        type: Date,
-        default: Date.now
+    status: {
+        type: String,
+        enum: ['Present', 'Absent'],
+        default: 'Present' // Default is present when they verify successfully
     }
-});
+}, { timestamps: true });
 
-// Prevent a student from marking attendance twice for the same lecture session!
+// Prevent duplicate records for the same student in the same session
 AttendanceRecordSchema.index({ session: 1, studentMatric: 1 }, { unique: true });
 
 module.exports = mongoose.model('AttendanceRecord', AttendanceRecordSchema);

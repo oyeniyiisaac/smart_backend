@@ -182,9 +182,11 @@ const verifyStudentLocation = async (req, res) => {
         const sessionAge = currentTime - new Date(activeSession.createdAt);
 
         if (sessionAge > sessionDurationLimit) {
-            // Automatically close the expired session in the database
             activeSession.isSessionActive = false;
             await activeSession.save();
+
+            // 🚨 TRIGGER ABSENTEE GENERATOR
+            await markAbsentees(activeSession._id, activeSession.courseCode);
 
             return res.status(410).json({
                 verified: false,
@@ -306,4 +308,50 @@ const verifyStudentLocation = async (req, res) => {
     }
 };
 
-module.exports = { register, signin, login, dashboard, verifyStudentLocation }
+
+const markAbsentees = async (sessionId, courseCode) => {
+    try {
+        console.log(`🧹 Processing absentees for session ${sessionId}...`);
+
+        // 1. Get all registered students
+        // Note: You can filter this by department/faculty if your session has those fields!
+        const allStudents = await StudentModel.find({}, 'matricno');
+        const allMatricNumbers = allStudents.map(student => student.matricno);
+
+        // 2. Get students who are already marked "Present" for this session
+        const presentRecords = await AttendanceRecord.find({ session: sessionId }, 'studentMatric');
+        const presentMatricNumbers = presentRecords.map(record => record.studentMatric);
+
+        // 3. Filter out who is missing
+        const absentMatricNumbers = allMatricNumbers.filter(
+            matric => !presentMatricNumbers.includes(matric)
+        );
+
+        if (absentMatricNumbers.length === 0) {
+            console.log("🎉 Perfect attendance! No absentees to record.");
+            return;
+        }
+
+        // 4. Prepare bulk insert operations
+        const absenteeRecords = absentMatricNumbers.map(matric => ({
+            session: sessionId,
+            courseCode: courseCode,
+            studentMatric: matric,
+            verifiedVia: "None",
+            status: "Absent"
+        }));
+
+        // 5. Bulk insert them into the AttendanceRecord collection
+        // unordered: false and ordered: false prevents duplicate key errors from crashing the process
+        await AttendanceRecord.insertMany(absenteeRecords, { ordered: false });
+        
+        console.log(`💾 Successfully logged ${absenteeRecords.length} student(s) as Absent.`);
+    } catch (error) {
+        // Ignore bulkwrite duplicate errors (in case some were already marked absent)
+        if (error.code !== 11000) {
+            console.error("❌ Error marking absentees:", error);
+        }
+    }
+};
+
+module.exports = { register, signin, login, dashboard, verifyStudentLocation, markAbsentees }
