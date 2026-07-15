@@ -319,22 +319,26 @@ const getActiveSessionsForStudent = async (req, res) => {
     try {
         // 1. Get the student's faculty and department from the verified JWT payload
         // (Remember we updated your auth middleware to attach this to req.user)
-        const studentFaculty = req.user?.faculty; 
-        const studentDepartment = req.user?.department; 
+        const studentFaculty = req.user?.faculty;
+        const studentDepartment = req.user?.department;
 
         if (!studentFaculty || !studentDepartment) {
-            return res.status(400).json({ 
-                message: "Student profile information (faculty/department) missing from authorization token." 
+            return res.status(400).json({
+                message: "Student profile information (faculty/department) missing from authorization token."
             });
         }
 
         // 2. Fetch only the active sessions matching BOTH the student's faculty and department
+        // 🟢 A robust, mismatch-proof query:
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
-            faculty: studentFaculty,
-            department: studentDepartment
+            faculty: {
+                $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+            },
+            department: {
+                $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+            }
         }).sort({ createdAt: -1 });
-
         return res.status(200).json({
             success: true,
             sessions: activeSessions
