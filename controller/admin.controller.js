@@ -204,7 +204,7 @@ const revokeInvite = async (req, res) => {
 const handleAdminCreateSession = async (req, res) => {
     try {
         const {
-            courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
+            courseName, courseCode, level,faculty, department,dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
             // Destructure validation strategy toggles from the client request payload
             useGpsVerification, useWifiVerification, useBeaconVerification,
@@ -245,6 +245,8 @@ const handleAdminCreateSession = async (req, res) => {
             semester,
             session,
             venue,
+            faculty,
+            department,
             mapUrl,
             longitude: targetLon,
             latitude: targetLat,
