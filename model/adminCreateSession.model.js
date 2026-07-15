@@ -19,6 +19,16 @@ const adminCreateSessionSchema = new mongoose.Schema(
         venue: String,
         mapUrl: String,
         
+        // 🏫 DYNAMIC ROUTING FIELDS (For scaling across 13 faculties & 100+ departments)
+        faculty: { 
+            type: String, 
+            required: true 
+        }, // e.g., "FCI", "Engineering", "Science"
+        department: { 
+            type: String, 
+            required: true 
+        }, // e.g., "Computer Science", "Software Engineering"
+        
         // 🆕 Active Validation Strategy Toggles
         useGpsVerification: {
             type: Boolean,
@@ -36,7 +46,10 @@ const adminCreateSessionSchema = new mongoose.Schema(
         // Proximity metrics parameters
         longitude: { type: Number, default: null },
         latitude: { type: Number, default: null },
-        isSessionActive: Boolean,
+        isSessionActive: {
+            type: Boolean,
+            default: true // Automatically sets the created session as active
+        },
         expectedBssid: { type: String, default: null },
         expectedSsid: { type: String, default: null },
         beaconUuid: { type: String, default: null },

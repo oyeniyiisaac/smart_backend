@@ -59,7 +59,9 @@ const login = async (req, res) => {
                 firstname: student.firstname,
                 lastname: student.lastname,
                 email: student.email,
-                matricno: student.matricno // Packed securely into the token payload
+                matricno: student.matricno,
+                faculty: student.faculty,
+                department: student.department,
             }
             const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' })
             res.json({ message: 'Sign in successful', data: { id: student._id }, token: token })
@@ -219,7 +221,8 @@ const verifyStudentLocation = async (req, res) => {
                     session: activeSession._id,
                     courseCode: courseCode,
                     studentMatric: studentMatric,
-                    verifiedVia: "Hardware"
+                    verifiedVia: "Hardware",
+                    status: "Present"
                 });
             } catch (dbError) {
                 if (dbError.code === 11000) {
@@ -242,7 +245,8 @@ const verifyStudentLocation = async (req, res) => {
         if (verificationMethodChosen === 'wifi' || verificationMethodChosen === 'beacon') {
             return res.status(400).json({
                 verified: false,
-                message: "Hardware verification failed. You are not connected to the classroom router or near the beacon."
+                message: "Hardware verification failed. You are not connected to the classroom router or near the beacon.",
+                status: "Absent"
             });
         }
 
@@ -276,13 +280,14 @@ const verifyStudentLocation = async (req, res) => {
                     session: activeSession._id,
                     courseCode: courseCode,
                     studentMatric: studentMatric,
-                    verifiedVia: "GPS"
+                    verifiedVia: "GPS",
+                    status: "Present"
                 });
             } catch (dbError) {
                 if (dbError.code === 11000) {
                     return res.status(400).json({
                         verified: false,
-                        message: "You have already marked attendance for this session!"
+                        message: "You have already marked attendance for this session!",
                     });
                 }
                 throw dbError;
@@ -299,6 +304,7 @@ const verifyStudentLocation = async (req, res) => {
                 verified: false,
                 message: `You are out of bounds. You are ${calculatedDistance.toFixed(1)} meters away from the lecture venue.`,
                 distance: calculatedDistance,
+                status: "Absent"
             });
         }
 
@@ -309,16 +315,46 @@ const verifyStudentLocation = async (req, res) => {
 };
 
 
-const markAbsentees = async (sessionId, courseCode) => {
+const getActiveSessionsForStudent = async (req, res) => {
     try {
-        console.log(`🧹 Processing absentees for session ${sessionId}...`);
+        // 1. Get the student's faculty and department from the verified JWT payload
+        // (Remember we updated your auth middleware to attach this to req.user)
+        const studentFaculty = req.user?.faculty; 
+        const studentDepartment = req.user?.department; 
 
-        // 1. Get all registered students
-        // Note: You can filter this by department/faculty if your session has those fields!
-        const allStudents = await StudentModel.find({}, 'matricno');
+        if (!studentFaculty || !studentDepartment) {
+            return res.status(400).json({ 
+                message: "Student profile information (faculty/department) missing from authorization token." 
+            });
+        }
+
+        // 2. Fetch only the active sessions matching BOTH the student's faculty and department
+        const activeSessions = await AdminCreateSession.find({
+            isSessionActive: true,
+            faculty: studentFaculty,
+            department: studentDepartment
+        }).sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            sessions: activeSessions
+        });
+
+    } catch (error) {
+        console.error("❌ Error fetching filtered sessions:", error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+};
+
+const markAbsentees = async (sessionId, courseCode, department) => {
+    try {
+        console.log(`🧹 Processing absentees for session ${sessionId} in ${department}...`);
+
+        // 🚨 1. Fetch only students registered in this specific department!
+        const allStudents = await StudentModel.find({ department: department }, 'matricno');
         const allMatricNumbers = allStudents.map(student => student.matricno);
 
-        // 2. Get students who are already marked "Present" for this session
+        // 2. Get students who are already marked "Present"
         const presentRecords = await AttendanceRecord.find({ session: sessionId }, 'studentMatric');
         const presentMatricNumbers = presentRecords.map(record => record.studentMatric);
 
@@ -328,11 +364,11 @@ const markAbsentees = async (sessionId, courseCode) => {
         );
 
         if (absentMatricNumbers.length === 0) {
-            console.log("🎉 Perfect attendance! No absentees to record.");
+            console.log(`🎉 Perfect attendance for ${department}!`);
             return;
         }
 
-        // 4. Prepare bulk insert operations
+        // 4. Prepare and bulk insert
         const absenteeRecords = absentMatricNumbers.map(matric => ({
             session: sessionId,
             courseCode: courseCode,
@@ -341,17 +377,14 @@ const markAbsentees = async (sessionId, courseCode) => {
             status: "Absent"
         }));
 
-        // 5. Bulk insert them into the AttendanceRecord collection
-        // unordered: false and ordered: false prevents duplicate key errors from crashing the process
         await AttendanceRecord.insertMany(absenteeRecords, { ordered: false });
-        
-        console.log(`💾 Successfully logged ${absenteeRecords.length} student(s) as Absent.`);
+        console.log(`Saved ${absenteeRecords.length} absences for ${department}.`);
+
     } catch (error) {
-        // Ignore bulkwrite duplicate errors (in case some were already marked absent)
         if (error.code !== 11000) {
-            console.error("❌ Error marking absentees:", error);
+            console.error("❌ Error marking department absentees:", error);
         }
     }
 };
 
-module.exports = { register, signin, login, dashboard, verifyStudentLocation, markAbsentees }
+module.exports = { register, signin, login, dashboard, verifyStudentLocation, getActiveSessionsForStudent, markAbsentees }
