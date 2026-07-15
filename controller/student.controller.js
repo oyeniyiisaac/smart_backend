@@ -333,12 +333,18 @@ const getActiveSessionsForStudent = async (req, res) => {
         // 🟢 A robust, mismatch-proof query:
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
-            faculty: {
-                $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
-            },
-            department: {
-                $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
-            }
+            $or: [
+                {
+                    faculty: {
+                        $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+                    },
+                    department: {
+                        $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+                    }
+                },
+                { faculty: { $exists: false } }, // 🟢 Fallback: If old database sessions don't have faculty/dept yet
+                { faculty: "" }
+            ]
         }).sort({ createdAt: -1 });
         return res.status(200).json({
             success: true,
