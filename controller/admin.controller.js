@@ -262,7 +262,7 @@ const handleAdminCreateSession = async (req, res) => {
         // 🔍 DEBUG LOG 2: Did Mongoose accept the fields or strip them out?
         console.log("2. Mongoose Document before saving:", newSession.toObject());
 
-        // const savedSession = await newSession.save();
+        const savedSession = await newSession.save();
 
         return res.status(201).json({
             message: "Session created successfully with designated verification constraints.",
