@@ -202,13 +202,13 @@ const revokeInvite = async (req, res) => {
 // ✅ RENAME: Changed function name to 'handleAdminCreateSession' to completely 
 // prevent conflicts with the Mongoose model 'AdminCreateSession'
 const handleAdminCreateSession = async (req, res) => {
-    console.log("📥 Incoming Faculty:", req.body.faculty);
-    console.log("📥 Incoming Department:", req.body.department);
+    // 🔍 DEBUG LOG 1: What is actually arriving at the server?
+    console.log("1. Raw req.body received:", JSON.stringify(req.body, null, 2));
+
     try {
         const {
-            courseName, courseCode, level,faculty, department,dateTimeFrom, dateTimeTo, courseId,
+            courseName, courseCode, level, faculty, department, dateTimeFrom, dateTimeTo, courseId,
             semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
-            // Destructure validation strategy toggles from the client request payload
             useGpsVerification, useWifiVerification, useBeaconVerification,
             expectedBssid, expectedSsid, beaconUuid
         } = req.body;
@@ -222,7 +222,6 @@ const handleAdminCreateSession = async (req, res) => {
                 latitude: targetLat,
                 longitude: targetLon,
                 radiusMeters: allowedRadius,
-                // Save true/false flags down into your file config system
                 useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
                 useWifiVerification: useWifiVerification || false,
                 useBeaconVerification: useBeaconVerification || false,
@@ -236,7 +235,6 @@ const handleAdminCreateSession = async (req, res) => {
             return res.status(500).json({ message: "Failed to write config", error: fileError.message });
         }
 
-        // ✅ SAFE: Instantiating the Mongoose schema here will now work perfectly
         const newSession = new AdminCreateSession({
             courseName,
             courseCode,
@@ -253,16 +251,16 @@ const handleAdminCreateSession = async (req, res) => {
             longitude: targetLon,
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
-            
-            // Map strategic options explicitly onto the saved Mongoose Document context
             useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
             useWifiVerification: useWifiVerification || false,
             useBeaconVerification: useBeaconVerification || false,
-            
             expectedBssid: useWifiVerification ? expectedBssid : null,
             expectedSsid: useWifiVerification ? expectedSsid : null,
             beaconUuid: useBeaconVerification ? beaconUuid : null
         });
+
+        // 🔍 DEBUG LOG 2: Did Mongoose accept the fields or strip them out?
+        console.log("2. Mongoose Document before saving:", newSession.toObject());
 
         const savedSession = await newSession.save();
 
@@ -278,7 +276,6 @@ const handleAdminCreateSession = async (req, res) => {
         }
     }
 };
-
 // GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
