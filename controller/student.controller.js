@@ -315,37 +315,45 @@ const verifyStudentLocation = async (req, res) => {
 };
 
 
+// 1. Import your Student model at the top of the file (adjust the path to match your project)
+const Student = require('../models/student.model'); // 👈 Make sure this matches your Student/User model
+
 const getActiveSessionsForStudent = async (req, res) => {
     try {
-        // 1. Get the student's faculty and department from the verified JWT payload
-        // (Remember we updated your auth middleware to attach this to req.user)
-        console.log("👤 Logged-in Student Token Payload:", req.user);
-        const studentFaculty = req.user?.faculty;
-        const studentDepartment = req.user?.department;
+        // 1. Get the student's ID from the verified token
+        const studentId = req.user?.id || req.user?._id;
 
+        if (!studentId) {
+            return res.status(401).json({ message: "Unauthorized. Student ID missing from token." });
+        }
+
+        // 2. Fetch the fresh student profile directly from the database
+        const student = await Student.findById(studentId);
+        if (!student) {
+            return res.status(404).json({ message: "Student profile not found." });
+        }
+
+        const studentFaculty = student.faculty;
+        const studentDepartment = student.department;
+
+        // 3. Fallback: If the student doesn't have these fields set in the DB yet
         if (!studentFaculty || !studentDepartment) {
             return res.status(400).json({
-                message: "Student profile information (faculty/department) missing from authorization token."
+                message: `Your student profile is missing department/faculty details in the database. (Found - Dept: ${studentDepartment || 'None'}, Faculty: ${studentFaculty || 'None'})`
             });
         }
 
-        // 2. Fetch only the active sessions matching BOTH the student's faculty and department
-        // 🟢 A robust, mismatch-proof query:
+        // 4. Fetch only the active sessions matching BOTH the student's faculty and department
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
-            $or: [
-                {
-                    faculty: {
-                        $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
-                    },
-                    department: {
-                        $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
-                    }
-                },
-                { faculty: { $exists: false } }, // 🟢 Fallback: If old database sessions don't have faculty/dept yet
-                { faculty: "" }
-            ]
+            faculty: {
+                $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+            },
+            department: {
+                $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+            }
         }).sort({ createdAt: -1 });
+
         return res.status(200).json({
             success: true,
             sessions: activeSessions,
