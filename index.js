@@ -9,7 +9,7 @@ const port = process.env.port
 const UserRoute = require('./routes/student.route')
 const AdminRoute = require('./routes/adminlog.route')
 const AdminCreateSession = require('./model/adminCreateSession.model')
-const { markAbsentees } = require('./controllers/student.controller'); // Adjust path to your controller
+const { markAbsentees } = require('./controller/student.controller'); // Adjust path to your controller
 app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 app.use(cors())
