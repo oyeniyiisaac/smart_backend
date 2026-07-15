@@ -202,6 +202,8 @@ const revokeInvite = async (req, res) => {
 // ✅ RENAME: Changed function name to 'handleAdminCreateSession' to completely 
 // prevent conflicts with the Mongoose model 'AdminCreateSession'
 const handleAdminCreateSession = async (req, res) => {
+    console.log("📥 Incoming Faculty:", req.body.faculty);
+    console.log("📥 Incoming Department:", req.body.department);
     try {
         const {
             courseName, courseCode, level,faculty, department,dateTimeFrom, dateTimeTo, courseId,
