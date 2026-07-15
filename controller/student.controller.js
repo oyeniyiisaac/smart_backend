@@ -319,6 +319,7 @@ const getActiveSessionsForStudent = async (req, res) => {
     try {
         // 1. Get the student's faculty and department from the verified JWT payload
         // (Remember we updated your auth middleware to attach this to req.user)
+        console.log("👤 Logged-in Student Token Payload:", req.user);
         const studentFaculty = req.user?.faculty;
         const studentDepartment = req.user?.department;
 
@@ -341,7 +342,9 @@ const getActiveSessionsForStudent = async (req, res) => {
         }).sort({ createdAt: -1 });
         return res.status(200).json({
             success: true,
-            sessions: activeSessions
+            sessions: activeSessions,
+            activeSessions: activeSessions,
+            data: activeSessions
         });
 
     } catch (error) {
