@@ -28,6 +28,6 @@ const adminCreateSessionSchema = new mongoose.Schema({
     beaconUuid: { type: String, default: null }
 }, { timestamps: true });
 
-// module.exports = mongoose.model('AdminCreateSession', adminCreateSessionSchema);
+module.exports = mongoose.model('AdminCreateSession', adminCreateSessionSchema);
 // 🟢 NEW LINE: Renaming the compiled model name forces Mongoose to register the new schema fields!
-module.exports = mongoose.model('AdminCreateSessionV2', adminCreateSessionSchema, 'admincreatesessions');
+// module.exports = mongoose.model('AdminCreateSessionV2', adminCreateSessionSchema, 'admincreatesessions');
