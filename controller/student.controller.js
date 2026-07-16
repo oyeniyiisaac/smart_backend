@@ -315,9 +315,6 @@ const verifyStudentLocation = async (req, res) => {
 };
 
 
-// 1. Import your Student model at the top of the file (adjust the path to match your project)
-const Student = require('../models/student.model'); // 👈 Make sure this matches your Student/User model
-
 const getActiveSessionsForStudent = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
