@@ -6,8 +6,9 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
-const AttendanceRecord = require('../model/attendanceRecord.model.js')
-const facultyData = require('../Utils/api.js');
+const AttendanceRecord = require('../model/attendanceRecord.model');
+const Student = require('../model/student.model');
+// const facultyData = require('../Utils/api.js');
 
 const configPath = path.join(__dirname, '..', 'config.json');
 
@@ -291,33 +292,49 @@ const adminGetAllSession = async (req, res) => {
     }
 };
 
-// GET /admin/session/:id [PROTECTED]
 const getSingleSession = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await AdminCreateSession.findById(id);
+        console.log("=== BACKEND REACHED ===");
+        console.log("Requested Session ID:", id);
 
+        const session = await AdminCreateSession.findById(id);
         if (!session) {
-            return res.status(404).json({
-                success: false,
-                message: "Session not found.",
-            });
+            console.log("Session not found in DB!");
+            return res.status(404).json({ success: false, message: "Session not found." });
         }
+
+        // 1. Find the attendance records
+        const attendanceRecords = await AttendanceRecord.find({ session: id });
+        console.log(`Found ${attendanceRecords.length} attendance records for this session.`);
+        console.log("Raw Records from DB:", attendanceRecords);
+
+        // 2. Map them
+        const checkedInStudents = attendanceRecords.map(record => ({
+            _id: record._id,
+            name: "Student (" + record.studentMatric.split('/')[0] + ")", 
+            matricNumber: record.studentMatric,
+            timeCheckedIn: record.createdAt,
+            isLocationVerified: record.verifiedVia === 'GPS' || record.verifiedVia === 'Hardware'
+        }));
+
+        const sessionWithStudents = {
+            ...session.toObject(),
+            checkedInStudents
+        };
+
+        console.log("Final Sent Payload checkedInStudents length:", sessionWithStudents.checkedInStudents.length);
+        console.log("=======================");
 
         return res.status(200).json({
             success: true,
-            data: session, // This data block now emits the clean toggles to the client!
+            data: sessionWithStudents,
         });
     } catch (error) {
-        console.error("Error fetching single session:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error.",
-            error: error.message,
-        });
+        console.error("Error in getSingleSession:", error);
+        return res.status(500).json({ success: false, error: error.message });
     }
 };
-
 const getSessionAttendanceCount = async (req, res) => {
     try {
         const { sessionId } = req.params;
