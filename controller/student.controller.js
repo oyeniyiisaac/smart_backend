@@ -356,13 +356,14 @@ const getActiveSessionsForStudent = async (req, res) => {
         }
 
         // 3. Query active sessions matching the student's faculty and department
+        // 3. Match flexibly using partial search keywords
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
             faculty: {
-                $regex: new RegExp(`^\\s*${studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+                $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') // Removed exact ^ and $ bounds
             },
             department: {
-                $regex: new RegExp(`^\\s*${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\s*$`, 'i')
+                $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') // Removed exact ^ and $ bounds
             }
         }).sort({ createdAt: -1 });
 
