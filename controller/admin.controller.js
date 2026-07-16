@@ -341,28 +341,29 @@ const getSessionAttendanceCount = async (req, res) => {
 };
 const closeAttendanceSession = async (req, res) => {
     try {
-        const { courseCode } = req.body; // Or req.params.courseCode
+        // 1. Destructure the unique sessionId from the request body
+        const { sessionId } = req.body; 
 
-        if (!courseCode) {
-            return res.status(400).json({ message: "Course code is required." });
+        if (!sessionId) {
+            return res.status(400).json({ message: "Session ID is required." });
         }
 
-        // Find the active session and turn it off
-        const updatedSession = await AdminCreateSession.findOneAndUpdate(
-            { courseCode: courseCode, isSessionActive: true },
+        // 2. Find the exact session by its ID and turn it off
+        const updatedSession = await AdminCreateSession.findByIdAndUpdate(
+            sessionId,
             { isSessionActive: false },
             { new: true }
         );
 
         if (!updatedSession) {
-            return res.status(404).json({ message: "No active session found for this course." });
+            return res.status(404).json({ message: "No active session found with this ID." });
         }
 
-        // 🚨 TRIGGER ABSENTEE GENERATOR
+        // 3. Trigger your absentee generator
         await markAbsentees(updatedSession._id, updatedSession.courseCode);
 
         return res.status(200).json({
-            message: `Attendance session for ${courseCode} has been successfully closed by the Admin.`,
+            message: `Attendance session for ${updatedSession.courseCode} has been successfully closed.`,
             session: updatedSession
         });
 
@@ -371,7 +372,6 @@ const closeAttendanceSession = async (req, res) => {
         return res.status(500).json({ message: "Internal server error." });
     }
 };
-
 
 
 module.exports = {

@@ -356,9 +356,11 @@ const getActiveSessionsForStudent = async (req, res) => {
         }
 
         // 3. Query active sessions matching the student's faculty and department
+        const now = new Date();
         // 3. Match flexibly using partial search keywords
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
+            dateTimeTo: { $gt: now },
             faculty: {
                 $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') // Removed exact ^ and $ bounds
             },
