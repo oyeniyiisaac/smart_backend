@@ -320,13 +320,11 @@ const Student = require('../models/student.model'); // 👈 Make sure this match
 
 const getActiveSessionsForStudent = async (req, res) => {
     try {
-        // 1. Extract the Authorization Header
         const authHeader = req.headers.authorization;
         if (!authHeader) {
             return res.status(401).json({ message: "Access denied. No token provided." });
         }
 
-        // Clean up formatting
         const cleanHeader = authHeader.replace(/[\r\n]+/g, ' ').trim();
         if (!cleanHeader.startsWith('Bearer ')) {
             return res.status(401).json({ message: "Access denied. Invalid token formatting." });
@@ -334,29 +332,33 @@ const getActiveSessionsForStudent = async (req, res) => {
 
         const token = cleanHeader.split(' ')[1];
 
-        // 2. Verify the JWT Token directly
+        // 1. Verify the JWT Token directly to get the student's ID
         let decodedStudent;
         try {
             decodedStudent = jwt.verify(token, process.env.JWT_SECRET);
         } catch (jwtError) {
-            console.error("❌ Student JWT Verification Failed:", jwtError.message);
             return res.status(401).json({ message: "Invalid or expired token." });
         }
 
-        // 🔍 DEBUG LOG: Confirm we successfully decoded it
-        console.log("👤 Decoded Student from Token:", decodedStudent);
+        // Use 'id' or '_id' from the decoded token payload
+        const studentId = decodedStudent.id || decodedStudent._id;
 
-        // 3. Extract faculty and department from the verified token payload
-        const studentFaculty = decodedStudent.faculty;
-        const studentDepartment = decodedStudent.department;
+        // 2. Look up the student directly in the database to get fresh faculty/department data
+        const student = await StudentModel.findById(studentId);
+        if (!student) {
+            return res.status(404).json({ message: "Student profile not found in database." });
+        }
+
+        const studentFaculty = student.faculty;
+        const studentDepartment = student.department;
 
         if (!studentFaculty || !studentDepartment) {
             return res.status(400).json({
-                message: `Profile incomplete. Faculty or department missing in token payload. (Faculty: ${studentFaculty || 'None'}, Dept: ${studentDepartment || 'None'})`
+                message: `Your student profile is missing department or faculty in the database. (Found - Dept: ${studentDepartment || 'None'}, Faculty: ${studentFaculty || 'None'})`
             });
         }
 
-        // 4. Query active sessions matching the student's faculty and department
+        // 3. Query active sessions matching the student's faculty and department
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
             faculty: {
