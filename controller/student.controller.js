@@ -429,21 +429,22 @@ const myAttendance = async (req, res) => {
 
         // Try getting the ID from req.user
         const studentId = req.user?.id || req.user?._id;
+        const studentMatric = req.user?.matricno;
 
-        console.log("🔍 Debug Controller Extracted studentId:", studentId);
+        console.log("🔍 Debug Controller Extracted matricNo:", studentMatric);
 
-        if (!studentId) {
+        if (!studentMatric) {
             return res.status(401).json({
                 success: false,
-                message: "Unauthorized: Student ID missing from token.",
+                message: "Unauthorized: Student matricNo missing from token.",
                 debugReqUser: req.user // Echoes back payload to Postman
             });
         }
 
         // Fetch records from DB
-        const records = await AttendanceRecord.find({ student: studentId }).sort({ createdAt: -1 });
+        const records = await AttendanceRecord.find({ student: studentMatric }).sort({ createdAt: -1 });
 
-        console.log(`✅ Debug Controller Found ${records.length} records for studentId ${studentId}`);
+        console.log(`✅ Debug Controller Found ${records.length} records for studentId ${studentMatric}`);
 
         return res.status(200).json({ success: true, records });
 
