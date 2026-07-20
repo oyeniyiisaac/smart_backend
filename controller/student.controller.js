@@ -442,6 +442,7 @@ const myAttendance = async (req, res) => {
         const cleanMatric = String(studentMatric).trim();
 
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
+            .populate('session', 'courseCode')
             .sort({ createdAt: -1 });
 
         console.log(`✅ Debug Controller Found ${records.length} records for matricNo ${cleanMatric}`);
