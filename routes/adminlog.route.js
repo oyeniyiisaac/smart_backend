@@ -11,19 +11,18 @@ const {
     getSingleSession,
     getFacultyData,
     handleAdminCreateSession,
-    getSessionAttendanceCount
+    getSessionAttendanceCount,
+    endSession
 } = require("../controller/admin.controller");
 
 const router = express.Router();
 
-// ─────────────────────────────────────────────
-// Public Routes
-// ─────────────────────────────────────────────
-// Admin login to get JWT token
+
 router.post("/login", loginAdmin);
 
 // Anyone with a valid token from an existing admin can register
 router.post("/create", createAdmin);
+router.post("/end-session", endSession)
 
 // ─────────────────────────────────────────────
 // Protected Admin Routes (Requires valid Admin login)
@@ -31,7 +30,6 @@ router.post("/create", createAdmin);
 // Fetch all sessions
 router.get("/sessionall", protect, adminGetAllSession);
 
-// SECURED: Added protect and requireAdmin so unauthorized users can't see specific coordinate nodes
 router.get("/monitor/:id", protect, requireAdmin, getSingleSession);
 
 // Verification of administrative identity
