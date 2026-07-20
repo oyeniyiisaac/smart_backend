@@ -423,4 +423,19 @@ const markAbsentees = async (sessionId, courseCode, department) => {
     }
 };
 
-module.exports = { register, signin, login, dashboard, verifyStudentLocation, getActiveSessionsForStudent, markAbsentees }
+const myAttendance = async (req, res) => {
+    try {
+        const studentId = req.user.id; // Extracted from JWT token
+        
+        // Fetch only records associated with this specific student ID
+        const records = await Attendance.find({ student: studentId })
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, records });
+    } catch (error) {
+        console.error("Error fetching student records:", error);
+        res.status(500).json({ success: false, message: "Server error fetching attendance." });
+    }
+};
+
+module.exports = { register, signin, login, dashboard, verifyStudentLocation, getActiveSessionsForStudent, markAbsentees, myAttendance }
