@@ -60,7 +60,38 @@ function startCleanupJob() {
     });
     console.log("⏰ Attendance auto-cleanup cron job initialized.");
 }
+cron.schedule('*/5 * * * *', async () => {
+    try {
+        console.log("⏰ Running automated session expiration checker...");
 
+        const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour limit
+        const cutoffTime = new Date(Date.now() - sessionDurationLimit);
+
+        // Find active sessions older than 1 hour or past dateTimeTo
+        const expiredSessions = await AdminCreateSession.find({
+            isSessionActive: true,
+            createdAt: { $lt: cutoffTime }
+        });
+
+        if (expiredSessions.length === 0) {
+            return;
+        }
+
+        for (const session of expiredSessions) {
+            console.log(`⏳ Auto-closing expired session: ${session.courseCode} (${session.department})`);
+            
+            // Mark session inactive
+            session.isSessionActive = false;
+            await session.save();
+
+            // Run absent generator
+            await markAbsentees(session._id, session.courseCode, session.department);
+        }
+
+    } catch (error) {
+        console.error("❌ Error in session cleanup cron job:", error);
+    }
+});
 app.listen(port, () => {
     console.log(port)
 })

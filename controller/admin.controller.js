@@ -7,6 +7,7 @@ const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
+const { markAbsentees } = require('./student.controller');
 const Student = require('../model/student.model');
 // const facultyData = require('../Utils/api.js');
 
@@ -390,6 +391,36 @@ const closeAttendanceSession = async (req, res) => {
     }
 };
 
+const endSession = async (req, res) => {
+    try {
+        const { sessionId } = req.params; // or req.body
+
+        // 1. Mark the session as inactive in DB
+        const session = await AdminCreateSession.findByIdAndUpdate(
+            sessionId,
+            { isSessionActive: false },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ message: "Session not found." });
+        }
+
+        // 🚨 2. Run automark for this session & department
+        await markAbsentees(session._id, session.courseCode, session.department);
+
+        return res.status(200).json({
+            success: true,
+            message: "Session ended successfully and absent students were marked.",
+            session
+        });
+
+    } catch (error) {
+        console.error("❌ Error ending session:", error);
+        return res.status(500).json({ message: "Server error closing session." });
+    }
+};
+
 
 module.exports = {
     protect,
@@ -404,5 +435,6 @@ module.exports = {
     getSingleSession,
     getFacultyData,
     getSessionAttendanceCount,
-    closeAttendanceSession
+    closeAttendanceSession,
+    endSession
 };

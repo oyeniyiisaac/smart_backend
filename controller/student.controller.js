@@ -110,14 +110,14 @@ const verifyStudentLocation = async (req, res) => {
             return res.status(401).json({ message: "Access denied. No token provided." });
         }
 
-        // 🧹 Clean up any potential client-side line breaks (\n, \r) or multi-spaces down into a clean single space
+        // 🧹 Clean up any potential client-side line breaks (\n, \r) or multi-spaces
         const cleanHeader = authHeader.replace(/[\r\n]+/g, ' ').trim();
 
         if (!cleanHeader.startsWith('Bearer ')) {
             return res.status(401).json({ message: "Access denied. Invalid token formatting prefix." });
         }
 
-        // Safely extract the sanitized signature token payload string
+        // Safely extract token
         const token = cleanHeader.split(' ')[1];
 
         // 2. Synchronous JWT Verification
@@ -132,8 +132,6 @@ const verifyStudentLocation = async (req, res) => {
         console.log("🕵️‍♂️ Decoded authUser payload:", authUser);
 
         // 3. Identification Fallback Extractors
-        // 🔐 AUTHENTICATION IDENTITY EXTRACTION
-        // Use the decoded `authUser` object we got from jwt.verify!
         const studentMatric = authUser?.matricno || authUser?.id || authUser?._id;
 
         if (!studentMatric) {
@@ -141,6 +139,7 @@ const verifyStudentLocation = async (req, res) => {
                 message: "Unauthorized. Student identification missing from token."
             });
         }
+
         // 4. Destructure the request body parameters
         console.log("📥 Incoming Student Payload:", req.body);
         const {
@@ -178,7 +177,6 @@ const verifyStudentLocation = async (req, res) => {
         }
 
         // ⏱️ STEP 2: TIME RANGE / EXPIRATION CHECK 
-        // Checks if the current time has passed the allowed duration (e.g., 1 hour since creation)
         const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour in milliseconds
         const currentTime = new Date();
         const sessionAge = currentTime - new Date(activeSession.createdAt);
@@ -187,8 +185,8 @@ const verifyStudentLocation = async (req, res) => {
             activeSession.isSessionActive = false;
             await activeSession.save();
 
-            // 🚨 TRIGGER ABSENTEE GENERATOR
-            await markAbsentees(activeSession._id, activeSession.courseCode);
+            // 🚨 TRIGGER ABSENTEE GENERATOR WITH SESSION DEPARTMENT
+            await markAbsentees(activeSession._id, activeSession.courseCode, activeSession.department);
 
             return res.status(410).json({
                 verified: false,
@@ -196,9 +194,8 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 6. Hardware Verification Strategy (Code continues as normal below...)
+        // 6. Hardware Verification Strategy
         let verifiedViaHardware = false;
-
 
         if (activeSession?.expectedBssid && scannedBssid) {
             if (activeSession.expectedBssid.toString().toLowerCase().trim() === scannedBssid.toString().toLowerCase().trim()) {
@@ -314,7 +311,6 @@ const verifyStudentLocation = async (req, res) => {
     }
 };
 
-
 const getActiveSessionsForStudent = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
@@ -329,7 +325,6 @@ const getActiveSessionsForStudent = async (req, res) => {
 
         const token = cleanHeader.split(' ')[1];
 
-        // 1. Verify the JWT Token directly to get the student's ID
         let decodedStudent;
         try {
             decodedStudent = jwt.verify(token, process.env.JWT_SECRET);
@@ -337,10 +332,8 @@ const getActiveSessionsForStudent = async (req, res) => {
             return res.status(401).json({ message: "Invalid or expired token." });
         }
 
-        // Use 'id' or '_id' from the decoded token payload
         const studentId = decodedStudent.id || decodedStudent._id;
 
-        // 2. Look up the student directly in the database to get fresh faculty/department data
         const student = await StudentModel.findById(studentId);
         if (!student) {
             return res.status(404).json({ message: "Student profile not found in database." });
@@ -355,17 +348,15 @@ const getActiveSessionsForStudent = async (req, res) => {
             });
         }
 
-        // 3. Query active sessions matching the student's faculty and department
         const now = new Date();
-        // 3. Match flexibly using partial search keywords
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
             dateTimeTo: { $gt: now },
             faculty: {
-                $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') // Removed exact ^ and $ bounds
+                $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
             },
             department: {
-                $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') // Removed exact ^ and $ bounds
+                $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
             }
         }).sort({ createdAt: -1 });
 
@@ -382,6 +373,7 @@ const getActiveSessionsForStudent = async (req, res) => {
     }
 };
 
+// 🎯 AUTOMARK ABSENTEES FUNCTION
 const markAbsentees = async (sessionId, courseCode, department) => {
     try {
         console.log(`🧹 Processing absentees for session ${sessionId} in ${department}...`);
@@ -425,7 +417,19 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        const studentMatric = req.user?.matricno || req.user?.studentMatric;
+        let studentMatric = req.user?.matricno || req.user?.studentMatric;
+
+        // Fallback token check if req.user is not attached by middleware
+        if (!studentMatric) {
+            const authHeader = req.headers.authorization;
+            if (authHeader) {
+                const token = authHeader.replace(/[\r\n]+/g, ' ').trim().split(' ')[1];
+                if (token) {
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                    studentMatric = decoded?.matricno || decoded?.id || decoded?._id;
+                }
+            }
+        }
 
         if (!studentMatric) {
             return res.status(401).json({
@@ -436,7 +440,7 @@ const myAttendance = async (req, res) => {
 
         const cleanMatric = String(studentMatric).trim();
 
-        // 🎯 Make sure .populate('session') is called!
+        // 🎯 Populate session details
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
             .populate('session')
             .sort({ createdAt: -1 });
