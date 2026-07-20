@@ -425,34 +425,38 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        console.log("🔍 Debug Controller req.user:", req.user);
-
-        // Try getting the ID from req.user
-        // const studentId = req.user?.id || req.user?._id;
-        const studentMatric = req.user?.matricno;
+        // 1. Extract matric number from req.user (from verifyToken middleware)
+        const studentMatric = req.user?.matricno || req.user?.studentMatric;
 
         console.log("🔍 Debug Controller Extracted matricNo:", studentMatric);
 
         if (!studentMatric) {
             return res.status(401).json({
                 success: false,
-                message: "Unauthorized: Student matricNo missing from token.",
-                debugReqUser: req.user // Echoes back payload to Postman
+                message: "Unauthorized: Matric number missing from token."
             });
         }
 
-        // Fetch records from DB
-        const records = await AttendanceRecord.find({ student: studentMatric }).sort({ createdAt: -1 });
+        // 2. Query MongoDB using exact key: studentMatric
+        // Trim whitespace and force String conversion to avoid type mismatches
+        const cleanMatric = String(studentMatric).trim();
 
-        console.log(`✅ Debug Controller Found ${records.length} records for studentId ${studentMatric}`);
+        const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
+            .sort({ createdAt: -1 });
 
-        return res.status(200).json({ success: true, records });
+        console.log(`✅ Debug Controller Found ${records.length} records for matricNo ${cleanMatric}`);
+
+        return res.status(200).json({
+            success: true,
+            count: records.length,
+            records
+        });
 
     } catch (error) {
         console.error("❌ Debug Controller Error:", error);
         return res.status(500).json({
             success: false,
-            message: "Server error fetching attendance.",
+            message: "Server error fetching attendance records.",
             errorDetails: error.message
         });
     }
