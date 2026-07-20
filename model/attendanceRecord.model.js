@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+
 const AttendanceRecordSchema = new mongoose.Schema({
     session: {
         type: mongoose.Schema.Types.ObjectId,
@@ -22,11 +23,10 @@ const AttendanceRecordSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: ['Present', 'Absent'],
-        default: 'Present' // Default is present when they verify successfully
+        default: 'Present'
     }
 }, { timestamps: true });
 
-// Prevent duplicate records for the same student in the same session
 AttendanceRecordSchema.index({ session: 1, studentMatric: 1 }, { unique: true });
 
 module.exports = mongoose.model('AttendanceRecord', AttendanceRecordSchema);

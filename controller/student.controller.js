@@ -425,14 +425,37 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        const studentId = req.user.id || req.user?._id;
-        const records = await AttendanceRecord.find({ student: studentId })
-            .sort({ createdAt: -1 });
+        // Log req.user to verify token decoding in server terminal
+        console.log("Decoded Token User:", req.user);
 
-        res.status(200).json({ success: true, records });
+        // Handle both _id and id properties from JWT
+        const studentId = req.user?.id || req.user?._id;
+
+        if (!studentId) {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Unauthorized: Student ID missing from token." 
+            });
+        }
+
+        // Fetch attendance records matching student ID
+        // Replace 'student' with your exact schema field name if different (e.g., studentId or user)
+        const records = await Attendance.find({ student: studentId }).sort({ createdAt: -1 });
+
+        return res.status(200).json({ 
+            success: true, 
+            records 
+        });
+
     } catch (error) {
-        console.error("Error fetching student records:", error);
-        res.status(500).json({ success: false, message: "Server error fetching attendance." });
+        // THIS LOG WILL SHOW THE EXACT ERROR IN YOUR TERMINAL!
+        console.error("Error fetching student records:", error.message || error);
+
+        return res.status(500).json({ 
+            success: false, 
+            message: "Server error fetching attendance.",
+            errorDetails: error.message // Helps debug during development
+        });
     }
 };
 
