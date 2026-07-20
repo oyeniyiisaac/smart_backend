@@ -428,7 +428,7 @@ const myAttendance = async (req, res) => {
         console.log("🔍 Debug Controller req.user:", req.user);
 
         // Try getting the ID from req.user
-        const studentId = req.user?.id || req.user?._id;
+        // const studentId = req.user?.id || req.user?._id;
         const studentMatric = req.user?.matricno;
 
         console.log("🔍 Debug Controller Extracted matricNo:", studentMatric);
