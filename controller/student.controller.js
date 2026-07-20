@@ -429,7 +429,13 @@ const myAttendance = async (req, res) => {
         console.log("Decoded Token User:", req.user);
 
         // Handle both _id and id properties from JWT
-        const studentId = req.user?.id || req.user?._id;
+        const studentId = 
+            req.user?.id || 
+            req.user?._id || 
+            req.user?.studentId || 
+            req.user?.userId ||
+            req.user?.user?._id ||
+            req.user?.user?.id;
 
         if (!studentId) {
             return res.status(401).json({ 
