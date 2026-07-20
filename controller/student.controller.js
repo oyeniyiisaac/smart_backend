@@ -441,7 +441,7 @@ const myAttendance = async (req, res) => {
         }
 
         // Fetch records from DB
-        const records = await Attendance.find({ student: studentId }).sort({ createdAt: -1 });
+        const records = await AttendanceRecord.find({ student: studentId }).sort({ createdAt: -1 });
 
         console.log(`✅ Debug Controller Found ${records.length} records for studentId ${studentId}`);
 
