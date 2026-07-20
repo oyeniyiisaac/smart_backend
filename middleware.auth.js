@@ -15,13 +15,11 @@ const verifyToken = (req, res, next) => {
 
     try {
         // 3. Verify the token using your environment's secret key
-        // Make sure process.env.JWT_SECRET matches what you used during student login/sign-up!
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
-        // 4. Attach the decoded payload (e.g., matricno, id) to req.user
         req.user = decoded; 
+        console.log("Decoded Token User:", req.user);
         
-        // Move to the controller (verifyStudentLocation)
         next(); 
     } catch (error) {
         console.error("❌ Token Verification Error:", error.message);
