@@ -45,7 +45,7 @@ const requireAdmin = (req, res, next) => {
 // ADMIN PROFILE & AUTHENTICATION ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 🆕 GET /admin/faculty-data [PROTECTED or PUBLIC depending on your router layout]
+// GET /admin/faculty-data
 const getFacultyData = async (req, res) => {
     try {
         return res.status(200).json({
@@ -95,7 +95,7 @@ const loginAdmin = async (req, res) => {
         const token = jwt.sign(
             { id: admin._id, email: admin.email, role: admin.role },
             process.env.JWT_SECRET,
-            { expiresIn: '1d' } // 1 day expiration so administrators don't timeout rapidly
+            { expiresIn: '1d' }
         );
 
         return res.status(200).json({
@@ -199,12 +199,7 @@ const revokeInvite = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // POST /admin/create-session [PROTECTED]
-
-
-// ✅ RENAME: Changed function name to 'handleAdminCreateSession' to completely 
-// prevent conflicts with the Mongoose model 'AdminCreateSession'
 const handleAdminCreateSession = async (req, res) => {
-    // 🔍 DEBUG LOG 1: What is actually arriving at the server?
     console.log("1. Raw req.body received:", JSON.stringify(req.body, null, 2));
 
     try {
@@ -261,7 +256,6 @@ const handleAdminCreateSession = async (req, res) => {
             beaconUuid: useBeaconVerification ? beaconUuid : null
         });
 
-        // 🔍 DEBUG LOG 2: Did Mongoose accept the fields or strip them out?
         console.log("2. Mongoose Document before saving:", newSession.toObject());
 
         const savedSession = await newSession.save();
@@ -278,6 +272,7 @@ const handleAdminCreateSession = async (req, res) => {
         }
     }
 };
+
 // GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
@@ -296,21 +291,14 @@ const adminGetAllSession = async (req, res) => {
 const getSingleSession = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log("=== BACKEND REACHED ===");
-        console.log("Requested Session ID:", id);
 
         const session = await AdminCreateSession.findById(id);
         if (!session) {
-            console.log("Session not found in DB!");
             return res.status(404).json({ success: false, message: "Session not found." });
         }
 
-        // 1. Find the attendance records
         const attendanceRecords = await AttendanceRecord.find({ session: id });
-        console.log(`Found ${attendanceRecords.length} attendance records for this session.`);
-        console.log("Raw Records from DB:", attendanceRecords);
 
-        // 2. Map them
         const checkedInStudents = attendanceRecords.map(record => ({
             _id: record._id,
             name: "Student (" + record.studentMatric.split('/')[0] + ")", 
@@ -324,9 +312,6 @@ const getSingleSession = async (req, res) => {
             checkedInStudents
         };
 
-        console.log("Final Sent Payload checkedInStudents length:", sessionWithStudents.checkedInStudents.length);
-        console.log("=======================");
-
         return res.status(200).json({
             success: true,
             data: sessionWithStudents,
@@ -336,14 +321,13 @@ const getSingleSession = async (req, res) => {
         return res.status(500).json({ success: false, error: error.message });
     }
 };
+
 const getSessionAttendanceCount = async (req, res) => {
     try {
         const { sessionId } = req.params;
 
-        // 1. Count how many records exist for this active session
         const totalStudents = await AttendanceRecord.countDocuments({ session: sessionId });
 
-        // 2. Fetch the list of students who are present
         const presentStudents = await AttendanceRecord.find({ session: sessionId })
             .select('studentMatric verifiedVia verifiedAt');
 
@@ -357,16 +341,16 @@ const getSessionAttendanceCount = async (req, res) => {
         return res.status(500).json({ message: "Internal server error." });
     }
 };
+
+// UPDATED: Dynamic lookup via body or params + safe 3-argument call to markAbsentees
 const closeAttendanceSession = async (req, res) => {
     try {
-        // 1. Destructure the unique sessionId from the request body
-        const { sessionId } = req.body; 
+        const sessionId = req.body.sessionId || req.params.sessionId || req.params.id; 
 
         if (!sessionId) {
-            return res.status(400).json({ message: "Session ID is required." });
+            return res.status(400).json({ success: false, message: "Session ID is required." });
         }
 
-        // 2. Find the exact session by its ID and turn it off
         const updatedSession = await AdminCreateSession.findByIdAndUpdate(
             sessionId,
             { isSessionActive: false },
@@ -374,28 +358,37 @@ const closeAttendanceSession = async (req, res) => {
         );
 
         if (!updatedSession) {
-            return res.status(404).json({ message: "No active session found with this ID." });
+            return res.status(404).json({ success: false, message: "No active session found with this ID." });
         }
 
-        // 3. Trigger your absentee generator
-        await markAbsentees(updatedSession._id, updatedSession.courseCode);
+        // 🎯 Trigger absentee generator with (sessionId, courseCode, department)
+        await markAbsentees(
+            updatedSession._id, 
+            updatedSession.courseCode, 
+            updatedSession.department
+        );
 
         return res.status(200).json({
+            success: true,
             message: `Attendance session for ${updatedSession.courseCode} has been successfully closed.`,
             session: updatedSession
         });
 
     } catch (error) {
         console.error("❌ Error closing session:", error);
-        return res.status(500).json({ message: "Internal server error." });
+        return res.status(500).json({ success: false, message: "Internal server error.", error: error.message });
     }
 };
 
+// UPDATED: Dynamic lookup via params or body
 const endSession = async (req, res) => {
     try {
-        const { sessionId } = req.params; // or req.body
+        const sessionId = req.params.sessionId || req.params.id || req.body.sessionId;
 
-        // 1. Mark the session as inactive in DB
+        if (!sessionId) {
+            return res.status(400).json({ success: false, message: "Session ID is required." });
+        }
+
         const session = await AdminCreateSession.findByIdAndUpdate(
             sessionId,
             { isSessionActive: false },
@@ -403,10 +396,10 @@ const endSession = async (req, res) => {
         );
 
         if (!session) {
-            return res.status(404).json({ message: "Session not found." });
+            return res.status(404).json({ success: false, message: "Session not found." });
         }
 
-        // 🚨 2. Run automark for this session & department
+        // 🎯 Trigger automark with (sessionId, courseCode, department)
         await markAbsentees(session._id, session.courseCode, session.department);
 
         return res.status(200).json({
@@ -417,10 +410,9 @@ const endSession = async (req, res) => {
 
     } catch (error) {
         console.error("❌ Error ending session:", error);
-        return res.status(500).json({ message: "Server error closing session." });
+        return res.status(500).json({ success: false, message: "Server error closing session.", error: error.message });
     }
 };
-
 
 module.exports = {
     protect,
