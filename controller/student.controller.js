@@ -446,7 +446,7 @@ const myAttendance = async (req, res) => {
 
         // Fetch attendance records matching student ID
         // Replace 'student' with your exact schema field name if different (e.g., studentId or user)
-        const records = await Attendance.find({ student: studentId }).sort({ createdAt: -1 });
+        const records = await AttendanceRecord.find({ student: studentId }).sort({ createdAt: -1 });
 
         return res.status(200).json({ 
             success: true, 
