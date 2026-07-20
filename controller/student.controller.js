@@ -425,10 +425,8 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        const studentId = req.user.id; // Extracted from JWT token
-        
-        // Fetch only records associated with this specific student ID
-        const records = await Attendance.find({ student: studentId })
+        const studentId = req.user.id || req.user?._id;
+        const records = await AttendanceRecord.find({ student: studentId })
             .sort({ createdAt: -1 });
 
         res.status(200).json({ success: true, records });
