@@ -425,42 +425,34 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        // Log req.user to verify token decoding in server terminal
-        console.log("Decoded Token User:", req.user);
+        console.log("🔍 Debug Controller req.user:", req.user);
 
-        // Handle both _id and id properties from JWT
-        const studentId = 
-            req.user?.id || 
-            req.user?._id || 
-            req.user?.studentId || 
-            req.user?.userId ||
-            req.user?.user?._id ||
-            req.user?.user?.id;
+        // Try getting the ID from req.user
+        const studentId = req.user?.id || req.user?._id;
+
+        console.log("🔍 Debug Controller Extracted studentId:", studentId);
 
         if (!studentId) {
-            return res.status(401).json({ 
-                success: false, 
-                message: "Unauthorized: Student ID missing from token." 
+            return res.status(401).json({
+                success: false,
+                message: "Unauthorized: Student ID missing from token.",
+                debugReqUser: req.user // Echoes back payload to Postman
             });
         }
 
-        // Fetch attendance records matching student ID
-        // Replace 'student' with your exact schema field name if different (e.g., studentId or user)
-        const records = await AttendanceRecord.find({ student: studentId }).sort({ createdAt: -1 });
+        // Fetch records from DB
+        const records = await Attendance.find({ student: studentId }).sort({ createdAt: -1 });
 
-        return res.status(200).json({ 
-            success: true, 
-            records 
-        });
+        console.log(`✅ Debug Controller Found ${records.length} records for studentId ${studentId}`);
+
+        return res.status(200).json({ success: true, records });
 
     } catch (error) {
-        // THIS LOG WILL SHOW THE EXACT ERROR IN YOUR TERMINAL!
-        console.error("Error fetching student records:", error.message || error);
-
-        return res.status(500).json({ 
-            success: false, 
+        console.error("❌ Debug Controller Error:", error);
+        return res.status(500).json({
+            success: false,
             message: "Server error fetching attendance.",
-            errorDetails: error.message // Helps debug during development
+            errorDetails: error.message
         });
     }
 };
