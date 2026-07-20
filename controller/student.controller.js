@@ -425,27 +425,21 @@ const markAbsentees = async (sessionId, courseCode, department) => {
 
 const myAttendance = async (req, res) => {
     try {
-        // 1. Extract matric number from req.user (from verifyToken middleware)
         const studentMatric = req.user?.matricno || req.user?.studentMatric;
-
-        console.log("🔍 Debug Controller Extracted matricNo:", studentMatric);
 
         if (!studentMatric) {
             return res.status(401).json({
                 success: false,
-                message: "Unauthorized: Matric number missing from token."
+                message: "Unauthorized: Student matric number missing."
             });
         }
 
-        // 2. Query MongoDB using exact key: studentMatric
-        // Trim whitespace and force String conversion to avoid type mismatches
         const cleanMatric = String(studentMatric).trim();
 
+        // 🎯 Make sure .populate('session') is called!
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
-            .populate('session', 'courseCode')
+            .populate('session')
             .sort({ createdAt: -1 });
-
-        console.log(`✅ Debug Controller Found ${records.length} records for matricNo ${cleanMatric}`);
 
         return res.status(200).json({
             success: true,
@@ -454,7 +448,7 @@ const myAttendance = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ Debug Controller Error:", error);
+        console.error("❌ Error fetching attendance:", error);
         return res.status(500).json({
             success: false,
             message: "Server error fetching attendance records.",
