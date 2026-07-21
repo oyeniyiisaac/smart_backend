@@ -12,24 +12,28 @@ const {
     getFacultyData,
     handleAdminCreateSession,
     getSessionAttendanceCount,
-    endSession
+    endSession,
+    closeAttendanceSession
 } = require("../controller/admin.controller");
 
 const router = express.Router();
 
-
+// Public Routes
 router.post("/login", loginAdmin);
-
-// Anyone with a valid token from an existing admin can register
-router.post("/create", createAdmin);
-router.post("/end-session", endSession)
+router.post("/create", createAdmin); // Registration via invite token
 
 // ─────────────────────────────────────────────
 // Protected Admin Routes (Requires valid Admin login)
 // ─────────────────────────────────────────────
+
+// Session Closure Routes (Protected + Flexible ID routing)
+router.post("/end-session/:id?", protect, requireAdmin, closeAttendanceSession);
+router.patch("/close-session/:id?", protect, requireAdmin, closeAttendanceSession);
+
 // Fetch all sessions
 router.get("/sessionall", protect, adminGetAllSession);
 
+// Session Details & Monitoring
 router.get("/monitor/:id", protect, requireAdmin, getSingleSession);
 
 // Verification of administrative identity
@@ -44,13 +48,10 @@ router.post("/invite", protect, requireAdmin, generateInvite);
 // Revoke an active invite token immediately
 router.delete("/invite", protect, requireAdmin, revokeInvite);
 
-// 🆕 Fetch the flattened faculty and department list for form dropdowns
+// Faculty & Department list
 router.get("/faculty-list", protect, requireAdmin, getFacultyData);
 
 // Fetch attendance count for a specific session
-router.get('/session-attendance/:sessionId', getSessionAttendanceCount);
-
-
-
+router.get('/session-attendance/:sessionId', protect, requireAdmin, getSessionAttendanceCount);
 
 module.exports = router;
