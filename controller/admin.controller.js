@@ -300,7 +300,7 @@ const getSessionAttendanceCount = async (req, res) => {
 
 const closeAttendanceSession = async (req, res) => {
     try {
-        // 1. Extract session ID across all possible param/body formats
+        // Catch ID from URL params OR body (_id, id, sessionId)
         const sessionId = 
             req.params.id || 
             req.params.sessionId || 
@@ -312,12 +312,11 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(400).json({ success: false, message: "Session ID is required." });
         }
 
-        // 2. Set isSessionActive to false AND expire dateTimeTo immediately
         const updatedSession = await AdminCreateSession.findByIdAndUpdate(
             sessionId,
             { 
                 isSessionActive: false,
-                dateTimeTo: new Date() // Forces instant time-based closure
+                dateTimeTo: new Date() // Forces immediate session expiration
             },
             { new: true }
         );
@@ -326,7 +325,7 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(404).json({ success: false, message: "No active session found with this ID." });
         }
 
-        // 3. Auto-mark missing students as Absent
+        // Auto-mark absent students
         await markAbsentees(
             updatedSession._id,
             updatedSession.courseCode,
@@ -335,7 +334,7 @@ const closeAttendanceSession = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: `Attendance session for ${updatedSession.courseCode} has been successfully closed.`,
+            message: `Attendance session for ${updatedSession.courseCode} closed successfully.`,
             session: updatedSession
         });
 
