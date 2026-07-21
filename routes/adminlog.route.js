@@ -13,7 +13,8 @@ const {
     handleAdminCreateSession,
     getSessionAttendanceCount,
     endSession,
-    closeAttendanceSession
+    closeAttendanceSession,
+    getCourseAttendanceReport
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -54,4 +55,7 @@ router.get("/faculty-list", protect, requireAdmin, getFacultyData);
 // Fetch attendance count for a specific session
 router.get('/session-attendance/:sessionId', protect, requireAdmin, getSessionAttendanceCount);
 
+
+// Attendance reports per course
+router.get('/reports', protect, requireAdmin, getCourseAttendanceReport)
 module.exports = router;

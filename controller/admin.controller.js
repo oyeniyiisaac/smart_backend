@@ -233,7 +233,6 @@ const handleAdminCreateSession = async (req, res) => {
 
 const adminGetAllSession = async (req, res) => {
     try {
-        // Fetch all 17 documents directly
         const sessions = await AdminCreateSession.find({}); 
         return res.status(200).json({ data: sessions });
     } catch (error) {
@@ -365,6 +364,70 @@ const closeAttendanceSession = async (req, res) => {
     }
 };
 
+const getCourseAttendanceReport = async (req, res) => {
+    try {
+        const { courseCode, semester } = req.query;
+
+        // 1. Fetch total sessions held for this course/semester
+        const query = {};
+        if (courseCode) query.courseCode = courseCode;
+        if (semester) query.semester = semester;
+
+        const totalSessions = await AdminCreateSession.countDocuments(query);
+
+        if (totalSessions === 0) {
+            return res.status(200).json({
+                success: true,
+                totalSessions: 0,
+                students: []
+            });
+        }
+
+        // 2. Aggregate student attendance check-ins
+        // Assuming AttendanceRecord contains: { studentName, matricNumber, courseCode, semester }
+        const reportData = await AttendanceRecord.aggregate([
+            { $match: query },
+            {
+                $group: {
+                    _id: "$matricNumber",
+                    name: { $first: "$studentName" },
+                    matricNumber: { $first: "$matricNumber" },
+                    attended: { $sum: 1 }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    name: 1,
+                    matricNumber: 1,
+                    totalClasses: { $literal: totalSessions },
+                    attended: 1,
+                    attendancePercentage: {
+                        $multiply: [
+                            { $divide: ["$attended", totalSessions] },
+                            100
+                        ]
+                    }
+                }
+            },
+            { $sort: { name: 1 } }
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            totalSessions,
+            students: reportData
+        });
+
+    } catch (error) {
+        console.error("Error generating report:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Failed to generate attendance report." 
+        });
+    }
+};
+
 module.exports = {
     protect,
     requireAdmin,
@@ -379,5 +442,6 @@ module.exports = {
     getFacultyData,
     getSessionAttendanceCount,
     closeAttendanceSession,
-    endSession: closeAttendanceSession
+    endSession: closeAttendanceSession,
+    getCourseAttendanceReport
 };
