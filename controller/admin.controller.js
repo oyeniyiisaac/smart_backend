@@ -379,19 +379,15 @@ const getCourseAttendanceReport = async (req, res) => {
         }
 
         // Only add semester filter if provided and not "All"
-        if (semester && semester !== 'All') {
-            query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
-        }
+        // if (semester && semester !== 'All') {
+        //     query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
+        // }
 
         // 2. Count Total Sessions held for this course & semester from 'admincreatesessions'
         const totalClasses = await AdminCreateSession.countDocuments(query);
 
         if (totalClasses === 0) {
-            return res.status(200).json({
-                success: true,
-                totalClasses: 0,
-                students: []
-            });
+            return res.status(200).json({ success: true, totalClasses: 0, students: [] });
         }
 
         // 3. Aggregate Student Attendance Check-ins from 'attendancerecords'
