@@ -233,11 +233,11 @@ const handleAdminCreateSession = async (req, res) => {
 
 const adminGetAllSession = async (req, res) => {
     try {
-        const sessions = await AdminCreateSession.find({ isSessionActive: true }).sort({ createdAt: -1 });
-        return res.status(200).json({ data: sessions || [] });
-    } catch (err) {
-        console.error("❌ adminGetAllSession Error:", err);
-        return res.status(500).json({ error: err.message });
+        // Fetch all 17 documents directly
+        const sessions = await AdminCreateSession.find({}); 
+        return res.status(200).json({ data: sessions });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
 };
 
