@@ -391,14 +391,26 @@ const getCourseAttendanceReport = async (req, res) => {
         }
 
         // 3. Aggregate Student Attendance Check-ins from 'attendancerecords'
+        // 3. Aggregate Student Attendance Check-ins
         const attendanceData = await AttendanceRecord.aggregate([
             { $match: query },
             {
                 $group: {
+                    // ⚠️ CRITICAL: You must change these strings to match your EXACT database field names!
                     _id: "$matricNumber",
                     name: { $first: "$studentName" },
                     matricNumber: { $first: "$matricNumber" },
-                    attended: { $sum: 1 }
+
+                    // Collect unique session IDs to prevent 150% over-counting
+                    uniqueSessions: { $addToSet: "$sessionId" } // Change "$sessionId" if your DB calls it something else
+                }
+            },
+            {
+                $project: {
+                    name: 1,
+                    matricNumber: 1,
+                    // Count the size of the unique sessions array instead of summing all clicks
+                    attended: { $size: "$uniqueSessions" }
                 }
             }
         ]);
