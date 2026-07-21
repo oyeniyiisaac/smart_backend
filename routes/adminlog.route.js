@@ -27,8 +27,8 @@ router.post("/create", createAdmin); // Registration via invite token
 // ─────────────────────────────────────────────
 
 // Session Closure Routes (Protected + Flexible ID routing)
-router.post("/end-session/:id?", protect, requireAdmin, closeAttendanceSession);
-router.patch("/close-session/:id?", protect, requireAdmin, closeAttendanceSession);
+router.post("/end-session/:id", protect, requireAdmin, closeAttendanceSession);
+router.patch("/close-session/:id", protect, requireAdmin, closeAttendanceSession);
 
 // Fetch all sessions
 router.get("/sessionall", protect, adminGetAllSession);
