@@ -1,147 +1,183 @@
-const StudentModel = require('../model/student.model')
-const AdminCreateSession = require('../model/adminCreateSession.model')
-const bcrypt = require('bcryptjs')
-const { Resend } = require('resend')
-const jwt = require('jsonwebtoken')
-const resend = new Resend(process.env.RESEND_API_KEY);
-const AttendanceRecord = require('../model/attendanceRecord.model')
+const StudentModel = require('../model/student.model');
+const AdminCreateSession = require('../model/adminCreateSession.model');
+const AttendanceRecord = require('../model/attendanceRecord.model');
+const bcrypt = require('bcryptjs');
+const { Resend } = require('resend');
+const jwt = require('jsonwebtoken');
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// ----------------------------------------------------
+// 1. REGISTER
+// ----------------------------------------------------
 const register = async (req, res) => {
-    console.log(req.body)
-    const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body
-    const form = new StudentModel(req.body)
-    const findOne = await StudentModel.findOne({ matricno: req.body.matricno })
-    if (findOne) {
-        return res.status(400).json({ message: "Matric number already exists" })
+    try {
+        const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body;
+
+        if (password !== confirmpassword) {
+            return res.status(400).json({ message: "Passwords do not match." });
+        }
+
+        const existingMatric = await StudentModel.findOne({ matricno });
+        if (existingMatric) {
+            return res.status(400).json({ message: "Matric number already exists." });
+        }
+
+        const existingEmail = await StudentModel.findOne({ email });
+        if (existingEmail) {
+            return res.status(400).json({ message: "Email already exists." });
+        }
+
+        // Hash password before saving
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        const newStudent = new StudentModel({
+            firstname,
+            lastname,
+            email,
+            matricno,
+            faculty,
+            department,
+            password: hashedPassword
+        });
+
+        const result = await newStudent.save();
+
+        // Send confirmation email asynchronously (do not block response on failure)
+        try {
+            await resend.emails.send({
+                from: "onboarding@resend.dev",
+                to: email,
+                subject: "Welcome to Attendance System",
+                html: `<p>Congrats ${firstname} on signing up!</p>`
+            });
+        } catch (emailErr) {
+            console.error("⚠️ Resend Email Error:", emailErr.message);
+        }
+
+        return res.status(201).json({ 
+            message: 'Registration successful', 
+            data: { id: result._id, email: result.email, matricno: result.matricno } 
+        });
+
+    } catch (error) {
+        console.error("❌ Register Error:", error);
+        return res.status(500).json({ message: "Internal server error during registration." });
     }
-    const findEmail = await StudentModel.findOne({ email: req.body.email })
-    if (findEmail) {
-        return res.status(400).json({ message: "Email already exists" })
-    }
-    form.save()
-        .then(async (result) => {
-            console.log('register successful', result)
-            if (result) {
-                console.log(result)
-                const { data, error } = await resend.emails.send({
-                    from: "onboarding@resend.dev", // Resend requires this for testing
-                    to: email,
-                    subject: "Hello",
-                    html: `<p>Congrats ${firstname} on signing up</p>`
-                });
-                res.render('/signin')
-            }
-            return
-        })
-        .catch((err) => {
-            console.log(err)
-        })
-    res.json({ message: 'Registration successful', data: req.body })
-}
+};
 
 const signin = (req, res) => {
-    res.render('/signin')
-}
+    res.render('signin');
+};
 
+// ----------------------------------------------------
+// 2. LOGIN
+// ----------------------------------------------------
 const login = async (req, res) => {
     try {
-        const student = await StudentModel.findOne({ matricno: req.body.matricno })
+        const { matricno, password } = req.body;
+
+        const student = await StudentModel.findOne({ matricno });
         if (!student) {
-            return res.status(404).json({ message: "Student not found" })
+            return res.status(404).json({ message: "Student not found." });
         }
 
-        const verifyPassword = await bcrypt.compare(req.body.password, student.password)
+        const verifyPassword = await bcrypt.compare(password, student.password);
         if (!verifyPassword) {
-            return res.status(401).json({ message: "Invalid password" })
-        } else {
-            const payload = {
-                id: student._id,
-                firstname: student.firstname,
-                lastname: student.lastname,
-                email: student.email,
-                matricno: student.matricno,
-                faculty: student.faculty,
-                department: student.department,
-            }
-            const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' })
-            res.json({ message: 'Sign in successful', data: { id: student._id }, token: token })
+            return res.status(401).json({ message: "Invalid password." });
         }
+
+        const payload = {
+            id: student._id,
+            firstname: student.firstname,
+            lastname: student.lastname,
+            email: student.email,
+            matricno: student.matricno,
+            faculty: student.faculty,
+            department: student.department,
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+        return res.status(200).json({
+            message: 'Sign in successful',
+            data: { id: student._id },
+            token
+        });
+
     } catch (error) {
-        console.log(error)
-        res.status(500).json({ message: "Internal server error" })
+        console.error("❌ Login Error:", error);
+        return res.status(500).json({ message: "Internal server error." });
     }
-}
+};
 
+// ----------------------------------------------------
+// 3. DASHBOARD
+// ----------------------------------------------------
 const dashboard = async (req, res) => {
-    const authHeader = req.headers.authorization
-    console.log(authHeader)
-    const token = authHeader.split(' ')[1]
-    console.log(token)
-    jwt.verify(token, process.env.JWT_SECRET, async (err, authUser) => {
-        if (err) {
-            return res.status(401).json({ message: "Invalid token" })
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ message: "Access denied. Missing or invalid token format." });
         }
-        try {
-            const user = await StudentModel.findOne({ matricno: authUser.matricno });
-            if (!user) {
-                return res.status(404).json({ message: "User not found" });
-            }
-            res.json({
-                message: "Dashboard",
-                result: {
-                    firstname: user.firstname,
-                    lastname: user.lastname || null,
-                    matricno: user.matricno,
-                    department: user.department || null,
-                    faculty: user.faculty || null,
-                },
-            });
-        } catch (error) {
-            res.status(500).json({ message: "Server error" });
-        }
-    })
-}
 
+        const token = authHeader.split(' ')[1];
+        const authUser = jwt.verify(token, process.env.JWT_SECRET);
+
+        const user = await StudentModel.findOne({ matricno: authUser.matricno });
+        if (!user) {
+            return res.status(404).json({ message: "User not found." });
+        }
+
+        return res.status(200).json({
+            message: "Dashboard",
+            result: {
+                firstname: user.firstname,
+                lastname: user.lastname || null,
+                matricno: user.matricno,
+                department: user.department || null,
+                faculty: user.faculty || null,
+            },
+        });
+
+    } catch (error) {
+        if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+            return res.status(401).json({ message: "Invalid or expired token." });
+        }
+        return res.status(500).json({ message: "Server error." });
+    }
+};
+
+// ----------------------------------------------------
+// 4. VERIFY LOCATION & MARK ATTENDANCE
+// ----------------------------------------------------
 const verifyStudentLocation = async (req, res) => {
     try {
-        // 1. Extract and check the Authorization Header
         const authHeader = req.headers.authorization;
         if (!authHeader) {
             return res.status(401).json({ message: "Access denied. No token provided." });
         }
 
-        // 🧹 Clean up any potential client-side line breaks (\n, \r) or multi-spaces
         const cleanHeader = authHeader.replace(/[\r\n]+/g, ' ').trim();
-
         if (!cleanHeader.startsWith('Bearer ')) {
-            return res.status(401).json({ message: "Access denied. Invalid token formatting prefix." });
+            return res.status(401).json({ message: "Access denied. Invalid token formatting." });
         }
 
-        // Safely extract token
         const token = cleanHeader.split(' ')[1];
 
-        // 2. Synchronous JWT Verification
         let authUser;
         try {
             authUser = jwt.verify(token, process.env.JWT_SECRET);
         } catch (jwtError) {
-            console.error("❌ JWT Signature Verification Failed:", jwtError.message);
-            return res.status(401).json({ message: "Invalid or expired token structure." });
+            return res.status(401).json({ message: "Invalid or expired token." });
         }
 
-        console.log("🕵️‍♂️ Decoded authUser payload:", authUser);
-
-        // 3. Identification Fallback Extractors
         const studentMatric = authUser?.matricno || authUser?.id || authUser?._id;
-
         if (!studentMatric) {
-            return res.status(401).json({
-                message: "Unauthorized. Student identification missing from token."
-            });
+            return res.status(401).json({ message: "Unauthorized. Student identification missing from token." });
         }
 
-        // 4. Destructure the request body parameters
-        console.log("📥 Incoming Student Payload:", req.body);
         const {
             studentLatitude,
             studentLongitude,
@@ -151,33 +187,27 @@ const verifyStudentLocation = async (req, res) => {
             verificationMethodChosen
         } = req.body;
 
-        // Dynamic Validation
         if (!courseCode) {
             return res.status(400).json({ message: "Course code is required." });
         }
 
         if (verificationMethodChosen === 'gps' || (!scannedBssid && !scannedUuid)) {
             if (studentLatitude === undefined || studentLongitude === undefined) {
-                return res.status(400).json({
-                    message: "GPS Verification requires active Latitude and Longitude.",
-                });
+                return res.status(400).json({ message: "GPS Verification requires active Latitude and Longitude." });
             }
         }
 
-        // 5. Look up active session
         const activeSession = await AdminCreateSession.findOne({
             courseCode: courseCode,
             isSessionActive: true,
         }).sort({ createdAt: -1 });
 
         if (!activeSession) {
-            return res.status(404).json({
-                message: "No active attendance session found for this course.",
-            });
+            return res.status(404).json({ message: "No active attendance session found for this course." });
         }
 
-        // ⏱️ STEP 2: TIME RANGE / EXPIRATION CHECK 
-        const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour in milliseconds
+        // ⏱️ Session Timeout Validation
+        const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour limit
         const currentTime = new Date();
         const sessionAge = currentTime - new Date(activeSession.createdAt);
 
@@ -185,7 +215,6 @@ const verifyStudentLocation = async (req, res) => {
             activeSession.isSessionActive = false;
             await activeSession.save();
 
-            // 🚨 TRIGGER ABSENTEE GENERATOR WITH SESSION DEPARTMENT
             await markAbsentees(activeSession._id, activeSession.courseCode, activeSession.department);
 
             return res.status(410).json({
@@ -194,7 +223,7 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // 6. Hardware Verification Strategy
+        // Hardware Verification Strategy
         let verifiedViaHardware = false;
 
         if (activeSession?.expectedBssid && scannedBssid) {
@@ -209,10 +238,7 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        // Success Path A: Hardware Match
         if (verifiedViaHardware) {
-            console.log(`\n✅ [ATTENDANCE SUCCESS] Student ${studentMatric} verified via Hardware Lock for ${courseCode}\n`);
-
             try {
                 await AttendanceRecord.create({
                     session: activeSession._id,
@@ -238,39 +264,35 @@ const verifyStudentLocation = async (req, res) => {
             });
         }
 
-        // Hardware fail response
         if (verificationMethodChosen === 'wifi' || verificationMethodChosen === 'beacon') {
             return res.status(400).json({
                 verified: false,
-                message: "Hardware verification failed. You are not connected to the classroom router or near the beacon.",
+                message: "Hardware verification failed. Connected to invalid hardware.",
                 status: "Absent"
             });
         }
 
-        // 7. Fallback: Haversine Calculation (GPS)
+        // Safe Haversine GPS Calculation
         const lat1 = parseFloat(studentLatitude) || 0;
         const lon1 = parseFloat(studentLongitude) || 0;
         const lat2 = parseFloat(activeSession.latitude) || 0;
         const lon2 = parseFloat(activeSession.longitude) || 0;
 
-        const allowedRadius = 200;
-        const R = 6371e3; // Earth's radius in meters
+        const allowedRadius = 200; // Radius in meters
+        const R = 6371e3; // Earth radius in meters
+        
         const phi1 = (lat1 * Math.PI) / 180;
         const phi2 = (lat2 * Math.PI) / 180;
         const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
         const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
 
-        const a =
-            Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) *
-            Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) *
-            Math.sin(deltaLambda / 2);
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
 
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const c = 2 * Math.atan2(Math.sqrt(Math.min(1, a)), Math.sqrt(1 - Math.min(1, a)));
         const calculatedDistance = R * c;
 
-        // Success Path B: GPS Match
         if (calculatedDistance <= allowedRadius) {
             try {
                 await AttendanceRecord.create({
@@ -299,7 +321,7 @@ const verifyStudentLocation = async (req, res) => {
         } else {
             return res.status(400).json({
                 verified: false,
-                message: `You are out of bounds. You are ${calculatedDistance.toFixed(1)} meters away from the lecture venue.`,
+                message: `Out of bounds. You are ${calculatedDistance.toFixed(1)} meters away from the lecture venue.`,
                 distance: calculatedDistance,
                 status: "Absent"
             });
@@ -311,40 +333,30 @@ const verifyStudentLocation = async (req, res) => {
     }
 };
 
+// ----------------------------------------------------
+// 5. GET ACTIVE SESSIONS FOR STUDENT
+// ----------------------------------------------------
 const getActiveSessionsForStudent = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
-        if (!authHeader) {
-            return res.status(401).json({ message: "Access denied. No token provided." });
-        }
-
-        const cleanHeader = authHeader.replace(/[\r\n]+/g, ' ').trim();
-        if (!cleanHeader.startsWith('Bearer ')) {
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({ message: "Access denied. Invalid token formatting." });
         }
 
-        const token = cleanHeader.split(' ')[1];
-
-        let decodedStudent;
-        try {
-            decodedStudent = jwt.verify(token, process.env.JWT_SECRET);
-        } catch (jwtError) {
-            return res.status(401).json({ message: "Invalid or expired token." });
-        }
-
+        const token = authHeader.split(' ')[1];
+        const decodedStudent = jwt.verify(token, process.env.JWT_SECRET);
         const studentId = decodedStudent.id || decodedStudent._id;
 
         const student = await StudentModel.findById(studentId);
         if (!student) {
-            return res.status(404).json({ message: "Student profile not found in database." });
+            return res.status(404).json({ message: "Student profile not found." });
         }
 
-        const studentFaculty = student.faculty;
-        const studentDepartment = student.department;
+        const { faculty: studentFaculty, department: studentDepartment } = student;
 
         if (!studentFaculty || !studentDepartment) {
             return res.status(400).json({
-                message: `Your student profile is missing department or faculty in the database. (Found - Dept: ${studentDepartment || 'None'}, Faculty: ${studentFaculty || 'None'})`
+                message: `Student profile incomplete. Faculty/Department missing.`
             });
         }
 
@@ -352,19 +364,13 @@ const getActiveSessionsForStudent = async (req, res) => {
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
             dateTimeTo: { $gt: now },
-            faculty: {
-                $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
-            },
-            department: {
-                $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i')
-            }
+            faculty: { $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') },
+            department: { $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') }
         }).sort({ createdAt: -1 });
 
         return res.status(200).json({
             success: true,
-            sessions: activeSessions,
-            activeSessions: activeSessions,
-            data: activeSessions
+            sessions: activeSessions
         });
 
     } catch (error) {
@@ -373,30 +379,23 @@ const getActiveSessionsForStudent = async (req, res) => {
     }
 };
 
-// 🎯 AUTOMARK ABSENTEES FUNCTION
+// ----------------------------------------------------
+// 6. AUTOMARK ABSENTEES
+// ----------------------------------------------------
 const markAbsentees = async (sessionId, courseCode, department) => {
     try {
-        console.log(`🧹 Processing absentees for session ${sessionId} in ${department}...`);
-
-        // 🚨 1. Fetch only students registered in this specific department!
-        const allStudents = await StudentModel.find({ department: department }, 'matricno');
+        const allStudents = await StudentModel.find({ department }, 'matricno');
         const allMatricNumbers = allStudents.map(student => student.matricno);
 
-        // 2. Get students who are already marked "Present"
         const presentRecords = await AttendanceRecord.find({ session: sessionId }, 'studentMatric');
         const presentMatricNumbers = presentRecords.map(record => record.studentMatric);
 
-        // 3. Filter out who is missing
         const absentMatricNumbers = allMatricNumbers.filter(
             matric => !presentMatricNumbers.includes(matric)
         );
 
-        if (absentMatricNumbers.length === 0) {
-            console.log(`🎉 Perfect attendance for ${department}!`);
-            return;
-        }
+        if (absentMatricNumbers.length === 0) return;
 
-        // 4. Prepare and bulk insert
         const absenteeRecords = absentMatricNumbers.map(matric => ({
             session: sessionId,
             courseCode: courseCode,
@@ -406,7 +405,6 @@ const markAbsentees = async (sessionId, courseCode, department) => {
         }));
 
         await AttendanceRecord.insertMany(absenteeRecords, { ordered: false });
-        console.log(`Saved ${absenteeRecords.length} absences for ${department}.`);
 
     } catch (error) {
         if (error.code !== 11000) {
@@ -415,14 +413,16 @@ const markAbsentees = async (sessionId, courseCode, department) => {
     }
 };
 
+// ----------------------------------------------------
+// 7. GET MY ATTENDANCE RECORDS
+// ----------------------------------------------------
 const myAttendance = async (req, res) => {
     try {
         let studentMatric = req.user?.matricno || req.user?.studentMatric;
 
-        // Fallback token check if req.user is not attached by middleware
         if (!studentMatric) {
             const authHeader = req.headers.authorization;
-            if (authHeader) {
+            if (authHeader && authHeader.startsWith('Bearer ')) {
                 const token = authHeader.replace(/[\r\n]+/g, ' ').trim().split(' ')[1];
                 if (token) {
                     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -440,7 +440,6 @@ const myAttendance = async (req, res) => {
 
         const cleanMatric = String(studentMatric).trim();
 
-        // 🎯 Populate session details
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
             .populate('session')
             .sort({ createdAt: -1 });
@@ -455,10 +454,18 @@ const myAttendance = async (req, res) => {
         console.error("❌ Error fetching attendance:", error);
         return res.status(500).json({
             success: false,
-            message: "Server error fetching attendance records.",
-            errorDetails: error.message
+            message: "Server error fetching attendance records."
         });
     }
 };
 
-module.exports = { register, signin, login, dashboard, verifyStudentLocation, getActiveSessionsForStudent, markAbsentees, myAttendance }
+module.exports = { 
+    register, 
+    signin, 
+    login, 
+    dashboard, 
+    verifyStudentLocation, 
+    getActiveSessionsForStudent, 
+    markAbsentees, 
+    myAttendance 
+};

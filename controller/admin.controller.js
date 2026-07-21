@@ -1,39 +1,32 @@
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');   // built-in Node.js — no install needed
-const fs = require("fs");
-const path = require("path");
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
-const { markAbsentees } = require('./student.controller');
 const Student = require('../model/student.model');
-// const facultyData = require('../Utils/api.js');
-
-const configPath = path.join(__dirname, '..', 'config.json');
+const { markAbsentees } = require('./student.controller');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTHENTICATION MIDDLEWARES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Protect routes — only logged-in admins can access
 const protect = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Not authorized, no token' });
+        return res.status(401).json({ message: 'Not authorized, no token provided' });
     }
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.admin = decoded; // { id, email, role }
+        req.admin = decoded;
         next();
     } catch (err) {
         return res.status(401).json({ message: 'Token invalid or expired' });
     }
 };
 
-// Ensure logged-in user has the correct admin privileges
 const requireAdmin = (req, res, next) => {
     if (!req.admin || req.admin.role !== 'admin') {
         return res.status(403).json({ message: 'Access denied. Admins only.' });
@@ -45,24 +38,14 @@ const requireAdmin = (req, res, next) => {
 // ADMIN PROFILE & AUTHENTICATION ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// GET /admin/faculty-data
+// Simplified: Handled directly by frontend, returned as confirmation if called
 const getFacultyData = async (req, res) => {
-    try {
-        return res.status(200).json({
-            success: true,
-            data: facultyData
-        });
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-            error: err.message
-        });
-    }
+    return res.status(200).json({
+        success: true,
+        message: "Faculty data managed directly by frontend."
+    });
 };
 
-// GET /admin/dashboard [PROTECTED]
 const adminDashboard = async (req, res) => {
     try {
         return res.status(200).json({
@@ -73,14 +56,18 @@ const adminDashboard = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ adminDashboard Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/login [PUBLIC]
 const loginAdmin = async (req, res) => {
     const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required.' });
+    }
+
     try {
         const admin = await Admin.findOne({ email });
         if (!admin) {
@@ -104,12 +91,11 @@ const loginAdmin = async (req, res) => {
             admin: { id: admin._id, email: admin.email, fullName: admin.fullName },
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ loginAdmin Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/invite [PROTECTED]
 const generateInvite = async (req, res) => {
     try {
         const hours = parseInt(req.query.hours) || 24;
@@ -128,12 +114,11 @@ const generateInvite = async (req, res) => {
             expiresAt,
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ generateInvite Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/create [PUBLIC]
 const createAdmin = async (req, res) => {
     const { fullName, email, password, confirmPassword, verifyToken } = req.body;
 
@@ -169,12 +154,11 @@ const createAdmin = async (req, res) => {
             admin: { id: newAdmin._id, email: newAdmin.email, fullName: newAdmin.fullName },
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ createAdmin Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// DELETE /admin/invite [PROTECTED]
 const revokeInvite = async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ message: 'Token is required.' });
@@ -189,7 +173,7 @@ const revokeInvite = async (req, res) => {
 
         return res.status(200).json({ message: 'Invite token revoked successfully.' });
     } catch (err) {
-        console.error(err);
+        console.error("❌ revokeInvite Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
@@ -198,10 +182,7 @@ const revokeInvite = async (req, res) => {
 // LECTURE SESSION MANAGEMENT ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// POST /admin/create-session [PROTECTED]
 const handleAdminCreateSession = async (req, res) => {
-    console.log("1. Raw req.body received:", JSON.stringify(req.body, null, 2));
-
     try {
         const {
             courseName, courseCode, level, faculty, department, dateTimeFrom, dateTimeTo, courseId,
@@ -212,25 +193,6 @@ const handleAdminCreateSession = async (req, res) => {
 
         const targetLat = latitude ? parseFloat(latitude) : 0;
         const targetLon = longitude ? parseFloat(longitude) : 0;
-        const allowedRadius = 300;
-
-        try {
-            const configData = {
-                latitude: targetLat,
-                longitude: targetLon,
-                radiusMeters: allowedRadius,
-                useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
-                useWifiVerification: useWifiVerification || false,
-                useBeaconVerification: useBeaconVerification || false,
-                expectedBssid: expectedBssid || null,
-                expectedSsid: expectedSsid || null,
-                beaconUuid: beaconUuid || null
-            };
-            fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf8');
-        } catch (fileError) {
-            console.error("❌ File System Error:", fileError.message);
-            return res.status(500).json({ message: "Failed to write config", error: fileError.message });
-        }
 
         const newSession = new AdminCreateSession({
             courseName,
@@ -256,8 +218,6 @@ const handleAdminCreateSession = async (req, res) => {
             beaconUuid: useBeaconVerification ? beaconUuid : null
         });
 
-        console.log("2. Mongoose Document before saving:", newSession.toObject());
-
         const savedSession = await newSession.save();
 
         return res.status(201).json({
@@ -266,24 +226,17 @@ const handleAdminCreateSession = async (req, res) => {
         });
 
     } catch (globalError) {
-        console.error("❌ Critical Controller Error:", globalError);
-        if (!res.headersSent) {
-            return res.status(500).json({ message: "An internal backend crash occurred", error: globalError.message });
-        }
+        console.error("❌ handleAdminCreateSession Error:", globalError);
+        return res.status(500).json({ message: "An internal backend crash occurred", error: globalError.message });
     }
 };
 
-// GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
-        const sessions = await AdminCreateSession.find({
-            isSessionActive: true,
-        }).sort({ createdAt: -1 });
-        if (!sessions || sessions.length === 0) {
-            return res.status(200).json({ data: [], message: 'No sessions found' });
-        }
-        return res.status(200).json({ data: sessions });
+        const sessions = await AdminCreateSession.find({ isSessionActive: true }).sort({ createdAt: -1 });
+        return res.status(200).json({ data: sessions || [] });
     } catch (err) {
+        console.error("❌ adminGetAllSession Error:", err);
         return res.status(500).json({ error: err.message });
     }
 };
@@ -299,25 +252,29 @@ const getSingleSession = async (req, res) => {
 
         const attendanceRecords = await AttendanceRecord.find({ session: id });
 
-        const checkedInStudents = attendanceRecords.map(record => ({
-            _id: record._id,
-            name: "Student (" + record.studentMatric.split('/')[0] + ")", 
-            matricNumber: record.studentMatric,
-            timeCheckedIn: record.createdAt,
-            isLocationVerified: record.verifiedVia === 'GPS' || record.verifiedVia === 'Hardware'
-        }));
-
-        const sessionWithStudents = {
-            ...session.toObject(),
-            checkedInStudents
-        };
+        // Query real student records from MongoDB using the matric number
+        const checkedInStudents = await Promise.all(
+            attendanceRecords.map(async (record) => {
+                const student = await Student.findOne({ matricno: record.studentMatric }).select('firstname lastname');
+                return {
+                    _id: record._id,
+                    name: student ? `${student.firstname} ${student.lastname}` : record.studentMatric,
+                    matricNumber: record.studentMatric,
+                    timeCheckedIn: record.createdAt,
+                    isLocationVerified: record.verifiedVia === 'GPS' || record.verifiedVia === 'Hardware'
+                };
+            })
+        );
 
         return res.status(200).json({
             success: true,
-            data: sessionWithStudents,
+            data: {
+                ...session.toObject(),
+                checkedInStudents
+            },
         });
     } catch (error) {
-        console.error("Error in getSingleSession:", error);
+        console.error("❌ Error in getSingleSession:", error);
         return res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -327,9 +284,8 @@ const getSessionAttendanceCount = async (req, res) => {
         const { sessionId } = req.params;
 
         const totalStudents = await AttendanceRecord.countDocuments({ session: sessionId });
-
         const presentStudents = await AttendanceRecord.find({ session: sessionId })
-            .select('studentMatric verifiedVia verifiedAt');
+            .select('studentMatric verifiedVia createdAt');
 
         return res.status(200).json({
             success: true,
@@ -342,10 +298,9 @@ const getSessionAttendanceCount = async (req, res) => {
     }
 };
 
-// UPDATED: Dynamic lookup via body or params + safe 3-argument call to markAbsentees
 const closeAttendanceSession = async (req, res) => {
     try {
-        const sessionId = req.body.sessionId || req.params.sessionId || req.params.id; 
+        const sessionId = req.body.sessionId || req.params.sessionId || req.params.id;
 
         if (!sessionId) {
             return res.status(400).json({ success: false, message: "Session ID is required." });
@@ -361,10 +316,9 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(404).json({ success: false, message: "No active session found with this ID." });
         }
 
-        // 🎯 Trigger absentee generator with (sessionId, courseCode, department)
         await markAbsentees(
-            updatedSession._id, 
-            updatedSession.courseCode, 
+            updatedSession._id,
+            updatedSession.courseCode,
             updatedSession.department
         );
 
@@ -377,40 +331,6 @@ const closeAttendanceSession = async (req, res) => {
     } catch (error) {
         console.error("❌ Error closing session:", error);
         return res.status(500).json({ success: false, message: "Internal server error.", error: error.message });
-    }
-};
-
-// UPDATED: Dynamic lookup via params or body
-const endSession = async (req, res) => {
-    try {
-        const sessionId = req.params.sessionId || req.params.id || req.body.sessionId;
-
-        if (!sessionId) {
-            return res.status(400).json({ success: false, message: "Session ID is required." });
-        }
-
-        const session = await AdminCreateSession.findByIdAndUpdate(
-            sessionId,
-            { isSessionActive: false },
-            { new: true }
-        );
-
-        if (!session) {
-            return res.status(404).json({ success: false, message: "Session not found." });
-        }
-
-        // 🎯 Trigger automark with (sessionId, courseCode, department)
-        await markAbsentees(session._id, session.courseCode, session.department);
-
-        return res.status(200).json({
-            success: true,
-            message: "Session ended successfully and absent students were marked.",
-            session
-        });
-
-    } catch (error) {
-        console.error("❌ Error ending session:", error);
-        return res.status(500).json({ success: false, message: "Server error closing session.", error: error.message });
     }
 };
 
@@ -428,5 +348,5 @@ module.exports = {
     getFacultyData,
     getSessionAttendanceCount,
     closeAttendanceSession,
-    endSession
+    endSession: closeAttendanceSession
 };
