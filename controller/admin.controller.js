@@ -325,22 +325,32 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(404).json({ success: false, message: "No active session found with this ID." });
         }
 
-        // Auto-mark absent students
-        await markAbsentees(
-            updatedSession._id,
-            updatedSession.courseCode,
-            updatedSession.department
-        );
+        // Safely execute markAbsentees without letting potential helper errors crash the response
+        try {
+            if (typeof markAbsentees === 'function') {
+                await markAbsentees(
+                    updatedSession._id,
+                    updatedSession.courseCode || '',
+                    updatedSession.department || ''
+                );
+            }
+        } catch (absenteeErr) {
+            console.error("⚠️ Non-fatal error while running markAbsentees:", absenteeErr.message || absenteeErr);
+        }
 
         return res.status(200).json({
             success: true,
-            message: `Attendance session for ${updatedSession.courseCode} closed successfully.`,
+            message: `Attendance session for ${updatedSession.courseCode || 'course'} closed successfully.`,
             session: updatedSession
         });
 
     } catch (error) {
-        console.error("❌ Error closing session:", error);
-        return res.status(500).json({ success: false, message: "Internal server error.", error: error.message });
+        console.error("❌ Fatal error closing session:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Internal server error.", 
+            error: error.message 
+        });
     }
 };
 
