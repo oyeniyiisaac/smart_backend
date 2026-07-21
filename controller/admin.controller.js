@@ -233,7 +233,7 @@ const handleAdminCreateSession = async (req, res) => {
 
 const adminGetAllSession = async (req, res) => {
     try {
-        const sessions = await AdminCreateSession.find({}); 
+        const sessions = await AdminCreateSession.find({});
         return res.status(200).json({ data: sessions });
     } catch (error) {
         return res.status(500).json({ message: error.message });
@@ -300,11 +300,11 @@ const getSessionAttendanceCount = async (req, res) => {
 const closeAttendanceSession = async (req, res) => {
     try {
         // 1. Extract raw ID input from params or body
-        let rawId = 
-            req.params.id || 
-            req.params.sessionId || 
-            req.body.sessionId || 
-            req.body.id || 
+        let rawId =
+            req.params.id ||
+            req.params.sessionId ||
+            req.body.sessionId ||
+            req.body.id ||
             req.body._id;
 
         // 2. Safely unwrap the ID if an object was passed instead of a string
@@ -315,16 +315,16 @@ const closeAttendanceSession = async (req, res) => {
         const sessionId = String(rawId || '').trim();
 
         if (!sessionId || sessionId === '[object Object]') {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Invalid Session ID provided." 
+            return res.status(400).json({
+                success: false,
+                message: "Invalid Session ID provided."
             });
         }
 
         // 3. Update session status in MongoDB
         const updatedSession = await AdminCreateSession.findByIdAndUpdate(
             sessionId,
-            { 
+            {
                 isSessionActive: false,
                 dateTimeTo: new Date()
             },
@@ -356,10 +356,10 @@ const closeAttendanceSession = async (req, res) => {
 
     } catch (error) {
         console.error("❌ Error closing session:", error);
-        return res.status(500).json({ 
-            success: false, 
-            message: "Internal server error.", 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: error.message
         });
     }
 };
@@ -374,8 +374,14 @@ const getCourseAttendanceReport = async (req, res) => {
 
         // 1. Build Query Filter
         const query = {};
-        if (courseCode) query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
-        if (semester) query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
+        if (courseCode) {
+            query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
+        }
+
+        // Only add semester filter if provided and not "All"
+        if (semester && semester !== 'All') {
+            query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
+        }
 
         // 2. Count Total Sessions held for this course & semester from 'admincreatesessions'
         const totalClasses = await AdminCreateSession.countDocuments(query);
@@ -405,7 +411,7 @@ const getCourseAttendanceReport = async (req, res) => {
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
             const percentage = ((attended / totalClasses) * 100).toFixed(1);
-            
+
             return {
                 id: record._id,
                 name: record.name,
@@ -425,9 +431,9 @@ const getCourseAttendanceReport = async (req, res) => {
 
     } catch (error) {
         console.error("Error generating attendance report:", error);
-        return res.status(500).json({ 
-            success: false, 
-            message: "Failed to generate report" 
+        return res.status(500).json({
+            success: false,
+            message: "Failed to generate report"
         });
     }
 };
