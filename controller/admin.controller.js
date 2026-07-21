@@ -368,7 +368,11 @@ const closeAttendanceSession = async (req, res) => {
 // import AttendanceRecord from '../models/AttendanceRecord.js';     // targets 'attendancerecords'
 // import Student from '../models/Student.js';                       // targets 'students'
 
-const getCourseAttendanceReport = async (req, res) => {
+import AdminCreateSession from '../models/AdminCreateSession.js'; 
+import AttendanceRecord from '../models/AttendanceRecord.js';
+import Student from '../models/Student.js'; // Ensure this is imported if needed
+
+export const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
@@ -377,39 +381,53 @@ const getCourseAttendanceReport = async (req, res) => {
         if (courseCode) {
             query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
         }
+        
+        // Uncommented semester filter so it works dynamically 
+        if (semester && semester !== 'All') {
+            query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
+        }
 
-        // Only add semester filter if provided and not "All"
-        // if (semester && semester !== 'All') {
-        //     query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
-        // }
-
-        // 2. Count Total Sessions held for this course & semester from 'admincreatesessions'
+        // 2. Count Total Sessions
         const totalClasses = await AdminCreateSession.countDocuments(query);
 
         if (totalClasses === 0) {
             return res.status(200).json({ success: true, totalClasses: 0, students: [] });
         }
 
-        // 3. Aggregate Student Attendance Check-ins from 'attendancerecords'
-        // 3. Aggregate Student Attendance Check-ins
+        // 3. Aggregate Check-ins and JOIN the students collection
         const attendanceData = await AttendanceRecord.aggregate([
             { $match: query },
+            
+            // Step A: Group by the student's ID/Matric inside the attendance record
             {
                 $group: {
-                    // ⚠️ CRITICAL: You must change these strings to match your EXACT database field names!
-                    _id: "$matricNumber",
-                    name: { $first: "$studentName" },
-                    matricNumber: { $first: "$matricNumber" },
-
-                    // Collect unique session IDs to prevent 150% over-counting
-                    uniqueSessions: { $addToSet: "$sessionId" } // Change "$sessionId" if your DB calls it something else
+                    // ⚠️ CHANGE "$studentId" TO WHATEVER FIELD ATTENDANCE USES TO IDENTIFY THE STUDENT
+                    _id: "$studentId", 
+                    
+                    // Collect unique session IDs to prevent over-counting
+                    uniqueSessions: { $addToSet: "$sessionId" } 
                 }
             },
+            
+            // Step B: Look up the student's actual profile in the "students" collection
+            {
+                $lookup: {
+                    from: "students",         // The exact name of your MongoDB students collection
+                    localField: "_id",        // The ID we grouped by above
+                    foreignField: "_id",      // The ID field inside the students collection
+                    as: "studentProfile"      // Array where MongoDB puts the matched student
+                }
+            },
+            
+            // Step C: Flatten the array so we can read the profile
+            { $unwind: { path: "$studentProfile", preserveNullAndEmptyArrays: true } },
+            
+            // Step D: Format the final output
             {
                 $project: {
-                    name: 1,
-                    matricNumber: 1,
-                    // Count the size of the unique sessions array instead of summing all clicks
+                    // ⚠️ MATCH THESE TO YOUR STUDENT SCHEMA FIELDS
+                    name: "$studentProfile.name", 
+                    matricNumber: "$studentProfile.matricNumber", 
                     attended: { $size: "$uniqueSessions" }
                 }
             }
@@ -422,12 +440,13 @@ const getCourseAttendanceReport = async (req, res) => {
 
             return {
                 id: record._id,
-                name: record.name,
-                matric: record.matricNumber,
+                // Fallback text just in case the lookup fails to find a matching student
+                name: record.name || "Unknown Student", 
+                matric: record.matricNumber || record._id || "N/A", 
                 totalClasses: totalClasses,
                 attended: attended,
                 percentage: Number(percentage),
-                isEligible: percentage >= 70
+                isEligible: Number(percentage) >= 70
             };
         });
 
