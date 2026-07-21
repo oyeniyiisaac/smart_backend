@@ -368,11 +368,7 @@ const closeAttendanceSession = async (req, res) => {
 // import AttendanceRecord from '../models/AttendanceRecord.js';     // targets 'attendancerecords'
 // import Student from '../models/Student.js';                       // targets 'students'
 
-import AdminCreateSession from '../models/AdminCreateSession.js'; 
-import AttendanceRecord from '../models/AttendanceRecord.js';
-import Student from '../models/Student.js'; // Ensure this is imported if needed
-
-export const getCourseAttendanceReport = async (req, res) => {
+const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
