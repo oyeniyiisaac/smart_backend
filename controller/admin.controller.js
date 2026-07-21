@@ -300,23 +300,34 @@ const getSessionAttendanceCount = async (req, res) => {
 
 const closeAttendanceSession = async (req, res) => {
     try {
-        // Catch ID from URL params OR body (_id, id, sessionId)
-        const sessionId = 
+        // 1. Extract raw ID input from params or body
+        let rawId = 
             req.params.id || 
             req.params.sessionId || 
             req.body.sessionId || 
             req.body.id || 
             req.body._id;
 
-        if (!sessionId) {
-            return res.status(400).json({ success: false, message: "Session ID is required." });
+        // 2. Safely unwrap the ID if an object was passed instead of a string
+        if (typeof rawId === 'object' && rawId !== null) {
+            rawId = rawId._id || rawId.id || rawId.sessionId || rawId;
         }
 
+        const sessionId = String(rawId || '').trim();
+
+        if (!sessionId || sessionId === '[object Object]') {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Invalid Session ID provided." 
+            });
+        }
+
+        // 3. Update session status in MongoDB
         const updatedSession = await AdminCreateSession.findByIdAndUpdate(
             sessionId,
             { 
                 isSessionActive: false,
-                dateTimeTo: new Date() // Forces immediate session expiration
+                dateTimeTo: new Date()
             },
             { new: true }
         );
@@ -325,7 +336,7 @@ const closeAttendanceSession = async (req, res) => {
             return res.status(404).json({ success: false, message: "No active session found with this ID." });
         }
 
-        // Safely execute markAbsentees without letting potential helper errors crash the response
+        // 4. Safely attempt absentee marking
         try {
             if (typeof markAbsentees === 'function') {
                 await markAbsentees(
@@ -335,7 +346,7 @@ const closeAttendanceSession = async (req, res) => {
                 );
             }
         } catch (absenteeErr) {
-            console.error("⚠️ Non-fatal error while running markAbsentees:", absenteeErr.message || absenteeErr);
+            console.error("⚠️ Non-fatal error in markAbsentees:", absenteeErr.message || absenteeErr);
         }
 
         return res.status(200).json({
@@ -345,7 +356,7 @@ const closeAttendanceSession = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ Fatal error closing session:", error);
+        console.error("❌ Error closing session:", error);
         return res.status(500).json({ 
             success: false, 
             message: "Internal server error.", 
