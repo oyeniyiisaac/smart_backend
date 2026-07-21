@@ -364,70 +364,73 @@ const closeAttendanceSession = async (req, res) => {
     }
 };
 
+// import AdminCreateSession from '../models/AdminCreateSession.js'; // targets 'admincreatesessions'
+// import AttendanceRecord from '../models/AttendanceRecord.js';     // targets 'attendancerecords'
+// import Student from '../models/Student.js';                       // targets 'students'
+
 const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
-        // 1. Fetch total sessions held for this course/semester
+        // 1. Build Query Filter
         const query = {};
-        if (courseCode) query.courseCode = courseCode;
-        if (semester) query.semester = semester;
+        if (courseCode) query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
+        if (semester) query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
 
-        const totalSessions = await AdminCreateSession.countDocuments(query);
+        // 2. Count Total Sessions held for this course & semester from 'admincreatesessions'
+        const totalClasses = await AdminCreateSession.countDocuments(query);
 
-        if (totalSessions === 0) {
+        if (totalClasses === 0) {
             return res.status(200).json({
                 success: true,
-                totalSessions: 0,
+                totalClasses: 0,
                 students: []
             });
         }
 
-        // 2. Aggregate student attendance check-ins
-        // Assuming AttendanceRecord contains: { studentName, matricNumber, courseCode, semester }
-        const reportData = await AttendanceRecord.aggregate([
+        // 3. Aggregate Student Attendance Check-ins from 'attendancerecords'
+        const attendanceData = await AttendanceRecord.aggregate([
             { $match: query },
             {
                 $group: {
-                    _id: "$matricNumber",
+                    _id: "$matricNumber", // or $studentId / $matric
                     name: { $first: "$studentName" },
                     matricNumber: { $first: "$matricNumber" },
                     attended: { $sum: 1 }
                 }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    name: 1,
-                    matricNumber: 1,
-                    totalClasses: { $literal: totalSessions },
-                    attended: 1,
-                    attendancePercentage: {
-                        $multiply: [
-                            { $divide: ["$attended", totalSessions] },
-                            100
-                        ]
-                    }
-                }
-            },
-            { $sort: { name: 1 } }
+            }
         ]);
+
+        // 4. Format records with totalClasses and calculated percentage
+        const studentReports = attendanceData.map(record => {
+            const attended = record.attended || 0;
+            const percentage = ((attended / totalClasses) * 100).toFixed(1);
+            
+            return {
+                id: record._id,
+                name: record.name,
+                matric: record.matricNumber,
+                totalClasses: totalClasses,
+                attended: attended,
+                percentage: Number(percentage),
+                isEligible: percentage >= 70
+            };
+        });
 
         return res.status(200).json({
             success: true,
-            totalSessions,
-            students: reportData
+            totalClasses,
+            students: studentReports
         });
 
     } catch (error) {
-        console.error("Error generating report:", error);
+        console.error("Error generating attendance report:", error);
         return res.status(500).json({ 
             success: false, 
-            message: "Failed to generate attendance report." 
+            message: "Failed to generate report" 
         });
     }
 };
-
 module.exports = {
     protect,
     requireAdmin,

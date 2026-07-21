@@ -19,6 +19,7 @@ const adminCreateSessionSchema = new mongoose.Schema({
     latitude: { type: Number, default: null },
     isSessionActive: { type: Boolean, default: true },
     
+    // Additional verification options
     useGpsVerification: { type: Boolean, default: true },
     useWifiVerification: { type: Boolean, default: false },
     useBeaconVerification: { type: Boolean, default: false },
@@ -26,8 +27,11 @@ const adminCreateSessionSchema = new mongoose.Schema({
     expectedBssid: { type: String, default: null },
     expectedSsid: { type: String, default: null },
     beaconUuid: { type: String, default: null }
-}, { timestamps: true });
+}, { 
+    timestamps: true,
+    // Explicitly binding to your exact MongoDB collection name:
+    collection: 'admincreatesessions' 
+});
 
-module.exports = mongoose.model('AdminCreateSession', adminCreateSessionSchema);
-// 🟢 NEW LINE: Renaming the compiled model name forces Mongoose to register the new schema fields!
-// module.exports = mongoose.model('AdminCreateSessionV2', adminCreateSessionSchema, 'admincreatesessions');
+// Avoid "Cannot overwrite model once compiled" errors during hot-reloads
+module.exports = mongoose.models.AdminCreateSession || mongoose.model('AdminCreateSession', adminCreateSessionSchema);
