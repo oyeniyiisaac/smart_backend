@@ -395,7 +395,7 @@ const getCourseAttendanceReport = async (req, res) => {
             { $match: query },
             {
                 $group: {
-                    _id: "$matricNumber", // or $studentId / $matric
+                    _id: "$matricNumber",
                     name: { $first: "$studentName" },
                     matricNumber: { $first: "$matricNumber" },
                     attended: { $sum: 1 }
