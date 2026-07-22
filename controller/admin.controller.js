@@ -414,9 +414,21 @@ const getCourseAttendanceReport = async (req, res) => {
             // Step C: Lookup student details from 'students' collection
             {
                 $lookup: {
-                    from: "students",             // MongoDB collection name for students
-                    localField: "studentMatric",  // Field in attendance
-                    foreignField: "studentMatric",// Field in students collection (or 'matricNumber')
+                    from: "students",
+                    let: { attendanceMatric: "$studentMatric" },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $or: [
+                                        { $eq: ["$matricNumber", "$$attendanceMatric"] },
+                                        { $eq: ["$studentMatric", "$$attendanceMatric"] },
+                                        { $eq: ["$matric", "$$attendanceMatric"] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
                     as: "studentInfo"
                 }
             },
