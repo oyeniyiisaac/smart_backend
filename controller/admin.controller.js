@@ -368,10 +368,8 @@ const closeAttendanceSession = async (req, res) => {
 // import AttendanceRecord from '../models/AttendanceRecord.js';     // targets 'attendancerecords'
 // import Student from '../models/Student.js';                       // targets 'students'
 
-import AdminCreateSession from '../models/AdminCreateSession.js'; 
-import AttendanceRecord from '../models/AttendanceRecord.js';
 
-export const getCourseAttendanceReport = async (req, res) => {
+const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
@@ -380,7 +378,7 @@ export const getCourseAttendanceReport = async (req, res) => {
         if (courseCode) query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
         if (semester && semester !== 'All') query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
 
-        // 2. Find ALL matching sessions and their IDs
+        // 2. Find ALL matching sessions
         const sessions = await AdminCreateSession.find(query);
         const totalClasses = sessions.length;
 
@@ -388,15 +386,13 @@ export const getCourseAttendanceReport = async (req, res) => {
             return res.status(200).json({ success: true, totalClasses: 0, students: [] });
         }
 
-        // Get an array of the session IDs to match against the attendance records
         const sessionIds = sessions.map(session => session._id.toString());
         const objectIdSessionIds = sessions.map(session => session._id);
 
-        // 3. Aggregate Student Attendance Check-ins using the Session IDs
+        // 3. Match Attendance Records using Session IDs OR Course Code
         const attendanceData = await AttendanceRecord.aggregate([
             { 
                 $match: { 
-                    // Search by the Session IDs we just found, OR fallback to courseCode if your DB uses that
                     $or: [
                         { sessionId: { $in: sessionIds } },
                         { sessionId: { $in: objectIdSessionIds } },
@@ -406,12 +402,9 @@ export const getCourseAttendanceReport = async (req, res) => {
             },
             {
                 $group: {
-                    // Group by matricNumber (or whatever your DB uses to identify the student)
                     _id: "$matricNumber", 
                     name: { $first: "$studentName" }, 
                     matricNumber: { $first: "$matricNumber" }, 
-                    
-                    // Collect unique session IDs they checked into
                     uniqueSessions: { $addToSet: "$sessionId" } 
                 }
             },
@@ -419,20 +412,19 @@ export const getCourseAttendanceReport = async (req, res) => {
                 $project: {
                     name: 1,
                     matricNumber: 1,
-                    // Count the size of the unique sessions array
                     attended: { $size: "$uniqueSessions" } 
                 }
             }
         ]);
 
-        // 4. Format the final output
+        // 4. Format Output
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
             const percentage = ((attended / totalClasses) * 100).toFixed(1);
 
             return {
                 id: record._id,
-                name: record.name || "Unknown Name", // Will show if studentName field is missing in DB
+                name: record.name || "Unknown Name", 
                 matric: record.matricNumber || record._id || "Unknown Matric", 
                 totalClasses: totalClasses,
                 attended: attended,
