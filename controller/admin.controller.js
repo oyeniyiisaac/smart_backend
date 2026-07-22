@@ -394,7 +394,6 @@ const getCourseAttendanceReport = async (req, res) => {
             });
         }
 
-        // Extract ObjectIds for filtering attendance records
         const sessionObjectIds = matchingSessions.map(s => s._id);
 
         // 3. Aggregate Attendance Records strictly for these session IDs
@@ -415,29 +414,17 @@ const getCourseAttendanceReport = async (req, res) => {
                 }
             },
 
-            // Step C: Lookup student details from 'students' collection
+            // Step C: Lookup student details matching 'matricno'
             {
                 $lookup: {
                     from: "students",
-                    let: { attendanceMatric: "$studentMatric" },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: {
-                                    $or: [
-                                        { $eq: ["$studentMatric", "$$attendanceMatric"] },
-                                        { $eq: ["$matricNumber", "$$attendanceMatric"] },
-                                        { $eq: ["$matric", "$$attendanceMatric"] }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
+                    localField: "studentMatric",
+                    foreignField: "matricno",
                     as: "studentInfo"
                 }
             },
 
-            // Step D: Extract student info array
+            // Step D: Flatten studentInfo array
             {
                 $unwind: {
                     path: "$studentInfo",
@@ -445,7 +432,7 @@ const getCourseAttendanceReport = async (req, res) => {
                 }
             },
 
-            // Step E: Project result fields
+            // Step E: Select necessary fields
             {
                 $project: {
                     studentMatric: 1,
@@ -459,7 +446,9 @@ const getCourseAttendanceReport = async (req, res) => {
         // 4. Format results for frontend UI
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
-            const percentage = ((attended / totalClasses) * 100).toFixed(1);
+            const percentage = totalClasses > 0 
+                ? ((attended / totalClasses) * 100).toFixed(1) 
+                : 0;
             
             const fullName = record.firstname && record.lastname 
                 ? `${record.firstname} ${record.lastname}`
