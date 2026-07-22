@@ -373,59 +373,87 @@ const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
-        // 1. Build Query for the Classes
-        const query = {};
-        if (courseCode) query.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
-        if (semester && semester !== 'All') query.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
-
-        // 2. Find ALL matching sessions
-        const sessions = await AdminCreateSession.find(query);
-        const totalClasses = sessions.length;
-
-        if (totalClasses === 0) {
-            return res.status(200).json({ success: true, totalClasses: 0, students: [] });
+        // 1. Build Query Filter for Sessions & Attendance
+        const sessionQuery = {};
+        if (courseCode) {
+            sessionQuery.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
+        }
+        if (semester && semester !== 'All') {
+            sessionQuery.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
         }
 
-        const sessionIds = sessions.map(session => session._id.toString());
-        const objectIdSessionIds = sessions.map(session => session._id);
+        // 2. Count Total Sessions held for this course/semester
+        const totalClasses = await AdminCreateSession.countDocuments(sessionQuery);
 
-        // 3. Match Attendance Records using Session IDs OR Course Code
+        if (totalClasses === 0) {
+            return res.status(200).json({
+                success: true,
+                totalClasses: 0,
+                students: []
+            });
+        }
+
+        // 3. Aggregate Student Attendance
         const attendanceData = await AttendanceRecord.aggregate([
+            // Step A: Filter attendance records by courseCode
             { 
                 $match: { 
-                    $or: [
-                        { sessionId: { $in: sessionIds } },
-                        { sessionId: { $in: objectIdSessionIds } },
-                        { courseCode: { $regex: new RegExp(`^${courseCode}$`, 'i') } }
-                    ]
+                    courseCode: { $regex: new RegExp(`^${courseCode}$`, 'i') } 
                 } 
             },
+            
+            // Step B: Group by studentMatric and collect unique sessions attended
             {
                 $group: {
-                    _id: "$matricNumber", 
-                    name: { $first: "$studentName" }, 
-                    matricNumber: { $first: "$matricNumber" }, 
-                    uniqueSessions: { $addToSet: "$sessionId" } 
+                    _id: "$studentMatric", 
+                    studentMatric: { $first: "$studentMatric" },
+                    uniqueSessions: { $addToSet: "$session" } 
                 }
             },
+
+            // Step C: Lookup student details from 'students' collection
+            {
+                $lookup: {
+                    from: "students",             // MongoDB collection name for students
+                    localField: "studentMatric",  // Field in attendance
+                    foreignField: "studentMatric",// Field in students collection (or 'matricNumber')
+                    as: "studentInfo"
+                }
+            },
+
+            // Step D: Extract student info
+            {
+                $unwind: {
+                    path: "$studentInfo",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
+            // Step E: Project final output
             {
                 $project: {
-                    name: 1,
-                    matricNumber: 1,
-                    attended: { $size: "$uniqueSessions" } 
+                    studentMatric: 1,
+                    attended: { $size: "$uniqueSessions" },
+                    firstname: "$studentInfo.firstname",
+                    lastname: "$studentInfo.lastname"
                 }
             }
         ]);
 
-        // 4. Format Output
+        // 4. Format output records for frontend
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
             const percentage = ((attended / totalClasses) * 100).toFixed(1);
+            
+            // Combine firstname and lastname if present
+            const fullName = record.firstname && record.lastname 
+                ? `${record.firstname} ${record.lastname}`
+                : record.firstname || record.lastname || "Unknown Student";
 
             return {
                 id: record._id,
-                name: record.name || "Unknown Name", 
-                matric: record.matricNumber || record._id || "Unknown Matric", 
+                name: fullName,
+                matric: record.studentMatric || "N/A",
                 totalClasses: totalClasses,
                 attended: attended,
                 percentage: Number(percentage),
