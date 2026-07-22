@@ -479,6 +479,71 @@ const getCourseAttendanceReport = async (req, res) => {
         });
     }
 };
+
+const getStudents = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || '';
+
+        // Build search query for name or matricno
+        const searchQuery = search
+            ? {
+                $or: [
+                    { firstname: { $regex: search, $options: 'i' } },
+                    { lastname: { $regex: search, $options: 'i' } },
+                    { matricno: { $regex: search, $options: 'i' } },
+                    { department: { $regex: search, $options: 'i' } }
+                ]
+            }
+            : {};
+
+        const totalStudents = await Student.countDocuments(searchQuery);
+        const totalPages = Math.ceil(totalStudents / limit);
+
+        const studentsData = await Student.find(searchQuery)
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .lean();
+
+        // Format data for frontend dashboard
+        const formattedStudents = studentsData.map(student => {
+            const firstName = student.firstname || '';
+            const lastName = student.lastname || '';
+            const fullName = `${firstName} ${lastName}`.trim() || 'Unknown Student';
+            
+            // Extract Initials for Avatar Badge (e.g., Alex Rivers -> AR)
+            const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || 'ST';
+
+            return {
+                id: student._id,
+                name: fullName,
+                initials,
+                matricNumber: student.matricno || 'N/A',
+                department: student.department || 'Computer Science',
+                enrolledCourses: student.enrolledCourses ? `${student.enrolledCourses.length} Courses` : '5 Courses',
+                // You can compute overall status or pass default
+                status: student.status || 'Eligible' 
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            totalStudents,
+            totalPages,
+            currentPage: page,
+            students: formattedStudents
+        });
+
+    } catch (error) {
+        console.error("Error fetching students:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch students"
+        });
+    }
+};
+
 module.exports = {
     protect,
     requireAdmin,
@@ -494,5 +559,6 @@ module.exports = {
     getSessionAttendanceCount,
     closeAttendanceSession,
     endSession: closeAttendanceSession,
-    getCourseAttendanceReport
+    getCourseAttendanceReport,
+    getStudents,
 };
