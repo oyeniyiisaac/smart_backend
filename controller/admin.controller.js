@@ -373,7 +373,7 @@ const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
 
-        // 1. Build Query Filter for Sessions & Attendance
+        // 1. Build Query for Admin Sessions (Filter by Course + Semester)
         const sessionQuery = {};
         if (courseCode) {
             sessionQuery.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
@@ -382,8 +382,9 @@ const getCourseAttendanceReport = async (req, res) => {
             sessionQuery.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
         }
 
-        // 2. Count Total Sessions held for this course/semester
-        const totalClasses = await AdminCreateSession.countDocuments(sessionQuery);
+        // 2. Get all matching session documents & their ObjectIds
+        const matchingSessions = await AdminCreateSession.find(sessionQuery).select('_id');
+        const totalClasses = matchingSessions.length;
 
         if (totalClasses === 0) {
             return res.status(200).json({
@@ -393,16 +394,19 @@ const getCourseAttendanceReport = async (req, res) => {
             });
         }
 
-        // 3. Aggregate Student Attendance
+        // Extract ObjectIds for filtering attendance records
+        const sessionObjectIds = matchingSessions.map(s => s._id);
+
+        // 3. Aggregate Attendance Records strictly for these session IDs
         const attendanceData = await AttendanceRecord.aggregate([
-            // Step A: Filter attendance records by courseCode
+            // Step A: Filter attendance records matching ONLY this semester's sessions
             { 
                 $match: { 
-                    courseCode: { $regex: new RegExp(`^${courseCode}$`, 'i') } 
+                    session: { $in: sessionObjectIds } 
                 } 
             },
             
-            // Step B: Group by studentMatric and collect unique sessions attended
+            // Step B: Group by studentMatric and count unique sessions attended
             {
                 $group: {
                     _id: "$studentMatric", 
@@ -421,8 +425,8 @@ const getCourseAttendanceReport = async (req, res) => {
                             $match: {
                                 $expr: {
                                     $or: [
-                                        { $eq: ["$matricNumber", "$$attendanceMatric"] },
                                         { $eq: ["$studentMatric", "$$attendanceMatric"] },
+                                        { $eq: ["$matricNumber", "$$attendanceMatric"] },
                                         { $eq: ["$matric", "$$attendanceMatric"] }
                                     ]
                                 }
@@ -433,7 +437,7 @@ const getCourseAttendanceReport = async (req, res) => {
                 }
             },
 
-            // Step D: Extract student info
+            // Step D: Extract student info array
             {
                 $unwind: {
                     path: "$studentInfo",
@@ -441,7 +445,7 @@ const getCourseAttendanceReport = async (req, res) => {
                 }
             },
 
-            // Step E: Project final output
+            // Step E: Project result fields
             {
                 $project: {
                     studentMatric: 1,
@@ -452,12 +456,11 @@ const getCourseAttendanceReport = async (req, res) => {
             }
         ]);
 
-        // 4. Format output records for frontend
+        // 4. Format results for frontend UI
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
             const percentage = ((attended / totalClasses) * 100).toFixed(1);
             
-            // Combine firstname and lastname if present
             const fullName = record.firstname && record.lastname 
                 ? `${record.firstname} ${record.lastname}`
                 : record.firstname || record.lastname || "Unknown Student";
