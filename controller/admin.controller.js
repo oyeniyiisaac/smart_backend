@@ -571,7 +571,8 @@ const getStudents = async (req, res) => {
 const createCourse = async (req, res) => {
     try {
         // 1. Ensure user authentication context exists
-        if (!req.user) {
+        const currentUser = req.user||req.admin;
+        if (!currentUser) {
             return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
         }
 
@@ -582,9 +583,9 @@ const createCourse = async (req, res) => {
         }
 
         // 2. Safe role and scope evaluation using optional chaining (?.)
-        const isSuperAdmin = req.user?.role === 'super_admin';
-        const faculty = isSuperAdmin ? req.body.faculty : req.user?.faculty;
-        const department = isSuperAdmin ? req.body.department : req.user?.department;
+        const isSuperAdmin = currentUser?.role === 'super_admin';
+        const faculty = isSuperAdmin ? req.body.faculty : currentUser?.faculty;
+        const department = isSuperAdmin ? req.body.department : currentUser?.department;
 
         if (!faculty || !department) {
             return res.status(400).json({ message: 'Faculty and Department must be provided or attached to user account.' });
@@ -609,7 +610,7 @@ const createCourse = async (req, res) => {
             department,
             semester,
             unit: Number(unit) || 3,
-            createdBy: req.user._id || req.user.id
+            createdBy: currentUser._id || currentUser.id
         });
 
         return res.status(201).json({
