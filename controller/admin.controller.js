@@ -13,25 +13,41 @@ const { markAbsentees } = require('./student.controller');
 // AUTHENTICATION MIDDLEWARES
 // ─────────────────────────────────────────────────────────────────────────────
 
-const protect = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Not authorized, no token provided' });
+// admin.controller.js (around line 25)
+const protect = async (req, res, next) => {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        try {
+            token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+            // ⚠️ FIX HERE: Explicitly attach to req.user (and req.admin just in case)
+            req.user = decoded;
+            req.admin = decoded;
+
+            return next();
+        } catch (error) {
+            return res.status(401).json({ message: 'Not authorized, token invalid or expired.' });
+        }
     }
-    try {
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.admin = decoded;
-        next();
-    } catch (err) {
-        return res.status(401).json({ message: 'Token invalid or expired' });
+
+    if (!token) {
+        return res.status(401).json({ message: 'Not authorized, no token provided.' });
     }
 };
 
+// admin.controller.js (around line 35)
 const requireAdmin = (req, res, next) => {
-    if (!req.admin || req.admin.role !== 'admin') {
-        return res.status(403).json({ message: 'Access denied. Admins only.' });
+    const user = req.user || req.admin;
+    
+    if (!user) {
+        return res.status(401).json({ message: 'Access denied: User context missing.' });
     }
+
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+        return res.status(403).json({ message: 'Access denied: Admin privileges required.' });
+    }
+
     next();
 };
 
