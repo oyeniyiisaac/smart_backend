@@ -120,38 +120,58 @@ const generateInvite = async (req, res) => {
 };
 
 const createAdmin = async (req, res) => {
-    const { fullName, email, password, confirmPassword, verifyToken } = req.body;
+    const { fullName, email, faculty, department, password, confirmPassword, verifyToken } = req.body;
 
+    // 1. Basic field validations
     if (!verifyToken) {
         return res.status(400).json({ message: 'Invite token is required.' });
+    }
+    if (!fullName || !email || !password) {
+        return res.status(400).json({ message: 'Full name, email, and password are required.' });
+    }
+    if (!faculty || !department) {
+        return res.status(400).json({ message: 'Faculty and Department are required.' });
     }
     if (password !== confirmPassword) {
         return res.status(400).json({ message: 'Passwords do not match.' });
     }
 
     try {
+        // 2. Validate invite token
         const invite = await AdminInvite.findOne({ token: verifyToken });
         if (!invite) return res.status(403).json({ message: 'Invalid invite token.' });
         if (invite.used) return res.status(403).json({ message: 'This invite token has already been used.' });
         if (new Date() > invite.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
 
-        const existing = await Admin.findOne({ email });
+        // 3. Check duplicate admin email
+        const existing = await Admin.findOne({ email: email.toLowerCase() });
         if (existing) return res.status(409).json({ message: 'An admin with that email already exists.' });
 
+        // 4. Hash password and persist admin with scoped details
         const hashedPassword = await bcrypt.hash(password, 12);
         const newAdmin = await Admin.create({
-            fullName,
-            email,
+            fullName: fullName.trim(),
+            email: email.toLowerCase().trim(),
+            faculty: faculty.trim(),
+            department: department.trim(),
             password: hashedPassword,
             role: 'admin',
         });
 
+        // 5. Mark invite token as spent
         invite.used = true;
         await invite.save();
 
         return res.status(201).json({
             message: 'Admin account created successfully.',
-            admin: { id: newAdmin._id, email: newAdmin.email, fullName: newAdmin.fullName },
+            admin: {
+                id: newAdmin._id,
+                fullName: newAdmin.fullName,
+                email: newAdmin.email,
+                role: newAdmin.role,
+                faculty: newAdmin.faculty,
+                department: newAdmin.department,
+            },
         });
     } catch (err) {
         console.error("❌ createAdmin Error:", err);
