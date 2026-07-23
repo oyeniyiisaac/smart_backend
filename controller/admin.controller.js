@@ -407,10 +407,6 @@ const closeAttendanceSession = async (req, res) => {
     }
 };
 
-// import AdminCreateSession from '../models/AdminCreateSession.js'; // targets 'admincreatesessions'
-// import AttendanceRecord from '../models/AttendanceRecord.js';     // targets 'attendancerecords'
-// import Student from '../models/Student.js';                       // targets 'students'
-
 
 const getCourseAttendanceReport = async (req, res) => {
     try {
