@@ -5,6 +5,7 @@ const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
+const Course = require('../model/course.model');
 const Student = require('../model/student.model');
 const { markAbsentees } = require('./student.controller');
 
@@ -564,6 +565,117 @@ const getStudents = async (req, res) => {
     }
 };
 
+
+
+// ── 1. Create New Course ─────────────────────────────
+createCourse = async (req, res) => {
+    try {
+        const { courseCode, courseTitle, semester, unit } = req.body;
+
+        if (!courseCode || !courseTitle || !semester) {
+            return res.status(400).json({ message: 'Course Code, Title, and Semester are required.' });
+        }
+
+        // Determine faculty and department from authenticated Admin context
+        const faculty = req.user.role === 'super_admin' ? req.body.faculty : req.user.faculty;
+        const department = req.user.role === 'super_admin' ? req.body.department : req.user.department;
+
+        if (!faculty || !department) {
+            return res.status(400).json({ message: 'Faculty and Department must be provided.' });
+        }
+
+        // Check for duplicate course code in the same department and semester
+        const existing = await Course.findOne({
+            courseCode: courseCode.toUpperCase().trim(),
+            department,
+            semester
+        });
+
+        if (existing) {
+            return res.status(409).json({ message: `Course ${courseCode} already exists for this semester.` });
+        }
+
+        const course = await Course.create({
+            courseCode: courseCode.toUpperCase().trim(),
+            courseTitle: courseTitle.trim(),
+            faculty,
+            department,
+            semester,
+            unit: Number(unit) || 3,
+            createdBy: req.user.id
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: 'Course created successfully.',
+            course
+        });
+
+    } catch (error) {
+        console.error("❌ createCourse Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// ── 2. Get Department Courses ────────────────────────
+getCourses = async (req, res) => {
+    try {
+        // Enforce department filter unless super_admin
+        const query = req.user.role === 'super_admin' ? {} : { department: req.user.department };
+
+        if (req.query.search) {
+            query.$or = [
+                { courseCode: { $regex: req.query.search, $options: 'i' } },
+                { courseTitle: { $regex: req.query.search, $options: 'i' } }
+            ];
+        }
+
+        if (req.query.semester) {
+            query.semester = req.query.semester;
+        }
+
+        const courses = await Course.find(query).sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            count: courses.length,
+            courses
+        });
+
+    } catch (error) {
+        console.error("❌ getCourses Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// ── 3. Delete Course ─────────────────────────────────
+deleteCourse = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const course = await Course.findById(id);
+
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found.' });
+        }
+
+        // Ensure non-super-admins can only delete courses in their own department
+        if (req.user.role !== 'super_admin' && course.department !== req.user.department) {
+            return res.status(403).json({ message: 'Unauthorized to delete this course.' });
+        }
+
+        await Course.findByIdAndDelete(id);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Course deleted successfully.'
+        });
+
+    } catch (error) {
+        console.error("❌ deleteCourse Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
 module.exports = {
     protect,
     requireAdmin,
@@ -581,4 +693,7 @@ module.exports = {
     endSession: closeAttendanceSession,
     getCourseAttendanceReport,
     getStudents,
+    createCourse,
+    getCourses,
+    deleteCourse
 };

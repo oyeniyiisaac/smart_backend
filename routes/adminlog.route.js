@@ -15,7 +15,10 @@ const {
     endSession,
     closeAttendanceSession,
     getCourseAttendanceReport,
-    getStudents
+    getStudents,
+    createCourse,
+    getCourses,
+    deleteCourse
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -31,6 +34,11 @@ router.post("/create", createAdmin); // Registration via invite token
 // Session Closure Routes (Protected + Flexible ID routing)
 router.post("/end-session/:id", protect, requireAdmin, closeAttendanceSession);
 router.patch("/close-session/:id", protect, requireAdmin, closeAttendanceSession);
+
+//Course
+router.post("/create-course", protect, requireAdmin, createCourse);
+router.get("/courses", protect, requireAdmin, getCourses);
+router.delete("/delete-course/:id", protect, requireAdmin, deleteCourse);
 
 // Fetch all sessions
 router.get("/sessionall", protect, adminGetAllSession);
