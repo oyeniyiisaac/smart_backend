@@ -1,39 +1,53 @@
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');   // built-in Node.js — no install needed
-const fs = require("fs");
-const path = require("path");
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
-
-const configPath = path.join(__dirname, '..', 'config.json');
+const AttendanceRecord = require('../model/attendanceRecord.model');
+const Course = require('../model/course.model');
+const Student = require('../model/student.model');
+const { markAbsentees } = require('./student.controller');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTHENTICATION MIDDLEWARES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Protect routes — only logged-in admins can access
-const protect = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Not authorized, no token' });
+// admin.controller.js (around line 25)
+const protect = async (req, res, next) => {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        try {
+            token = req.headers.authorization.split(' ')[1];
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+            // ⚠️ FIX HERE: Explicitly attach to req.user (and req.admin just in case)
+            req.user = decoded;
+            req.admin = decoded;
+
+            return next();
+        } catch (error) {
+            return res.status(401).json({ message: 'Not authorized, token invalid or expired.' });
+        }
     }
-    try {
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.admin = decoded; // { id, email, role }
-        next();
-    } catch (err) {
-        return res.status(401).json({ message: 'Token invalid or expired' });
+
+    if (!token) {
+        return res.status(401).json({ message: 'Not authorized, no token provided.' });
     }
 };
 
-// Ensure logged-in user has the correct admin privileges
+// admin.controller.js (around line 35)
 const requireAdmin = (req, res, next) => {
-    if (!req.admin || req.admin.role !== 'admin') {
-        return res.status(403).json({ message: 'Access denied. Admins only.' });
+    const user = req.user || req.admin;
+    
+    if (!user) {
+        return res.status(401).json({ message: 'Access denied: User context missing.' });
     }
+
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+        return res.status(403).json({ message: 'Access denied: Admin privileges required.' });
+    }
+
     next();
 };
 
@@ -41,7 +55,14 @@ const requireAdmin = (req, res, next) => {
 // ADMIN PROFILE & AUTHENTICATION ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// GET /admin/dashboard [PROTECTED]
+// Simplified: Handled directly by frontend, returned as confirmation if called
+const getFacultyData = async (req, res) => {
+    return res.status(200).json({
+        success: true,
+        message: "Faculty data managed directly by frontend."
+    });
+};
+
 const adminDashboard = async (req, res) => {
     try {
         return res.status(200).json({
@@ -52,14 +73,18 @@ const adminDashboard = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ adminDashboard Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/login [PUBLIC]
 const loginAdmin = async (req, res) => {
     const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required.' });
+    }
+
     try {
         const admin = await Admin.findOne({ email });
         if (!admin) {
@@ -72,9 +97,15 @@ const loginAdmin = async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: admin._id, email: admin.email, role: admin.role },
+            {
+                id: admin._id,
+                email: admin.email,
+                role: admin.role,
+                faculty: admin.faculty,
+                department: admin.department
+            },
             process.env.JWT_SECRET,
-            { expiresIn: '1d' } // 1 day expiration so administrators don't timeout rapidly
+            { expiresIn: '1d' }
         );
 
         return res.status(200).json({
@@ -83,12 +114,11 @@ const loginAdmin = async (req, res) => {
             admin: { id: admin._id, email: admin.email, fullName: admin.fullName },
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ loginAdmin Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/invite [PROTECTED]
 const generateInvite = async (req, res) => {
     try {
         const hours = parseInt(req.query.hours) || 24;
@@ -107,53 +137,71 @@ const generateInvite = async (req, res) => {
             expiresAt,
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ generateInvite Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// POST /admin/create [PUBLIC]
 const createAdmin = async (req, res) => {
-    const { fullName, email, password, confirmPassword, verifyToken } = req.body;
+    const { fullName, email, faculty, department, password, confirmPassword, verifyToken } = req.body;
 
+    // 1. Basic field validations
     if (!verifyToken) {
         return res.status(400).json({ message: 'Invite token is required.' });
+    }
+    if (!fullName || !email || !password) {
+        return res.status(400).json({ message: 'Full name, email, and password are required.' });
+    }
+    if (!faculty || !department) {
+        return res.status(400).json({ message: 'Faculty and Department are required.' });
     }
     if (password !== confirmPassword) {
         return res.status(400).json({ message: 'Passwords do not match.' });
     }
 
     try {
+        // 2. Validate invite token
         const invite = await AdminInvite.findOne({ token: verifyToken });
         if (!invite) return res.status(403).json({ message: 'Invalid invite token.' });
         if (invite.used) return res.status(403).json({ message: 'This invite token has already been used.' });
         if (new Date() > invite.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
 
-        const existing = await Admin.findOne({ email });
+        // 3. Check duplicate admin email
+        const existing = await Admin.findOne({ email: email.toLowerCase() });
         if (existing) return res.status(409).json({ message: 'An admin with that email already exists.' });
 
+        // 4. Hash password and persist admin with scoped details
         const hashedPassword = await bcrypt.hash(password, 12);
         const newAdmin = await Admin.create({
-            fullName,
-            email,
+            fullName: fullName.trim(),
+            email: email.toLowerCase().trim(),
+            faculty: faculty.trim(),
+            department: department.trim(),
             password: hashedPassword,
             role: 'admin',
         });
 
+        // 5. Mark invite token as spent
         invite.used = true;
         await invite.save();
 
         return res.status(201).json({
             message: 'Admin account created successfully.',
-            admin: { id: newAdmin._id, email: newAdmin.email, fullName: newAdmin.fullName },
+            admin: {
+                id: newAdmin._id,
+                fullName: newAdmin.fullName,
+                email: newAdmin.email,
+                role: newAdmin.role,
+                faculty: newAdmin.faculty,
+                department: newAdmin.department,
+            },
         });
     } catch (err) {
-        console.error(err);
+        console.error("❌ createAdmin Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
 
-// DELETE /admin/invite [PROTECTED]
 const revokeInvite = async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ message: 'Token is required.' });
@@ -168,7 +216,7 @@ const revokeInvite = async (req, res) => {
 
         return res.status(200).json({ message: 'Invite token revoked successfully.' });
     } catch (err) {
-        console.error(err);
+        console.error("❌ revokeInvite Error:", err);
         return res.status(500).json({ message: 'Server error', error: err.message });
     }
 };
@@ -177,29 +225,17 @@ const revokeInvite = async (req, res) => {
 // LECTURE SESSION MANAGEMENT ENDPOINTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// POST /admin/create-session [PROTECTED]
-const adminCreateSession = async (req, res) => {
+const handleAdminCreateSession = async (req, res) => {
     try {
         const {
-            courseName, courseCode, level, dateTimeFrom, dateTimeTo, courseId,
-            semester, session, venue, mapUrl, longitude, latitude, isSessionActive
+            courseName, courseCode, level, faculty, department, dateTimeFrom, dateTimeTo, courseId,
+            semester, session, venue, mapUrl, longitude, latitude, isSessionActive,
+            useGpsVerification, useWifiVerification, useBeaconVerification,
+            expectedBssid, expectedSsid, beaconUuid
         } = req.body;
 
         const targetLat = latitude ? parseFloat(latitude) : 0;
         const targetLon = longitude ? parseFloat(longitude) : 0;
-        const allowedRadius = 10;
-
-        try {
-            const configData = {
-                latitude: targetLat,
-                longitude: targetLon,
-                radiusMeters: allowedRadius
-            };
-            fs.writeFileSync(configPath, JSON.stringify(configData, null, 2), 'utf8');
-        } catch (fileError) {
-            console.error("❌ File System Error:", fileError.message);
-            return res.status(500).json({ message: "Failed to write config", error: fileError.message });
-        }
 
         const newSession = new AdminCreateSession({
             courseName,
@@ -211,139 +247,466 @@ const adminCreateSession = async (req, res) => {
             semester,
             session,
             venue,
+            faculty,
+            department,
             mapUrl,
             longitude: targetLon,
             latitude: targetLat,
             isSessionActive: isSessionActive !== undefined ? isSessionActive : true,
+            useGpsVerification: useGpsVerification !== undefined ? useGpsVerification : true,
+            useWifiVerification: useWifiVerification || false,
+            useBeaconVerification: useBeaconVerification || false,
+            expectedBssid: useWifiVerification ? expectedBssid : null,
+            expectedSsid: useWifiVerification ? expectedSsid : null,
+            beaconUuid: useBeaconVerification ? beaconUuid : null
         });
 
         const savedSession = await newSession.save();
 
         return res.status(201).json({
-            message: "Session created and 10-meter geofence configuration updated successfully",
+            message: "Session created successfully with designated verification constraints.",
             data: savedSession,
         });
 
     } catch (globalError) {
-        console.error("❌ Critical Controller Error:", globalError);
-        if (!res.headersSent) {
-            return res.status(500).json({ message: "An internal backend crash occurred", error: globalError.message });
-        }
+        console.error("❌ handleAdminCreateSession Error:", globalError);
+        return res.status(500).json({ message: "An internal backend crash occurred", error: globalError.message });
     }
 };
 
-// GET /admin/all-sessions [PROTECTED]
 const adminGetAllSession = async (req, res) => {
     try {
-        const sessions = await AdminCreateSession.find({
-          isSessionActive: true,
-        });
-        if (!sessions || sessions.length === 0) {
-            return res.status(200).json({ data: [], message: 'No sessions found' });
-        }
+        const sessions = await AdminCreateSession.find({});
         return res.status(200).json({ data: sessions });
-    } catch (err) {
-        return res.status(500).json({ error: err.message });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
 };
 
-// GET /admin/session/:id [PROTECTED]
 const getSingleSession = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await AdminCreateSession.findById(id);
 
+        const session = await AdminCreateSession.findById(id);
         if (!session) {
-            return res.status(404).json({
+            return res.status(404).json({ success: false, message: "Session not found." });
+        }
+
+        const attendanceRecords = await AttendanceRecord.find({ session: id });
+
+        // Query real student records from MongoDB using the matric number
+        const checkedInStudents = await Promise.all(
+            attendanceRecords.map(async (record) => {
+                const student = await Student.findOne({ matricno: record.studentMatric }).select('firstname lastname');
+                return {
+                    _id: record._id,
+                    name: student ? `${student.firstname} ${student.lastname}` : record.studentMatric,
+                    matricNumber: record.studentMatric,
+                    timeCheckedIn: record.createdAt,
+                    isLocationVerified: record.verifiedVia === 'GPS' || record.verifiedVia === 'Hardware'
+                };
+            })
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                ...session.toObject(),
+                checkedInStudents
+            },
+        });
+    } catch (error) {
+        console.error("❌ Error in getSingleSession:", error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+const getSessionAttendanceCount = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+
+        const totalStudents = await AttendanceRecord.countDocuments({ session: sessionId });
+        const presentStudents = await AttendanceRecord.find({ session: sessionId })
+            .select('studentMatric verifiedVia createdAt');
+
+        return res.status(200).json({
+            success: true,
+            totalStudents,
+            presentStudents
+        });
+    } catch (error) {
+        console.error("❌ Error fetching attendance count:", error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+};
+
+const closeAttendanceSession = async (req, res) => {
+    try {
+        // 1. Extract raw ID input from params or body
+        let rawId =
+            req.params.id ||
+            req.params.sessionId ||
+            req.body.sessionId ||
+            req.body.id ||
+            req.body._id;
+
+        // 2. Safely unwrap the ID if an object was passed instead of a string
+        if (typeof rawId === 'object' && rawId !== null) {
+            rawId = rawId._id || rawId.id || rawId.sessionId || rawId;
+        }
+
+        const sessionId = String(rawId || '').trim();
+
+        if (!sessionId || sessionId === '[object Object]') {
+            return res.status(400).json({
                 success: false,
-                message: "Session not found.",
+                message: "Invalid Session ID provided."
             });
+        }
+
+        // 3. Update session status in MongoDB
+        const updatedSession = await AdminCreateSession.findByIdAndUpdate(
+            sessionId,
+            {
+                isSessionActive: false,
+                dateTimeTo: new Date()
+            },
+            { new: true }
+        );
+
+        if (!updatedSession) {
+            return res.status(404).json({ success: false, message: "No active session found with this ID." });
+        }
+
+        // 4. Safely attempt absentee marking
+        try {
+            if (typeof markAbsentees === 'function') {
+                await markAbsentees(
+                    updatedSession._id,
+                    updatedSession.courseCode || '',
+                    updatedSession.department || ''
+                );
+            }
+        } catch (absenteeErr) {
+            console.error("⚠️ Non-fatal error in markAbsentees:", absenteeErr.message || absenteeErr);
         }
 
         return res.status(200).json({
             success: true,
-            data: session,
+            message: `Attendance session for ${updatedSession.courseCode || 'course'} closed successfully.`,
+            session: updatedSession
         });
+
     } catch (error) {
-        console.error("Error fetching single session:", error);
+        console.error("❌ Error closing session:", error);
         return res.status(500).json({
             success: false,
             message: "Internal server error.",
-            error: error.message,
+            error: error.message
         });
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STUDENT VERIFICATION SYSTEM (Haversine Formula Math Engine)
-// ─────────────────────────────────────────────────────────────────────────────
 
-// Internal utility: computes distance in meters over curved space
-const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth's radius in meters
-    const phi1 = (lat1 * Math.PI) / 180;
-    const phi2 = (lat2 * Math.PI) / 180;
-    const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
-    const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-              Math.cos(phi1) * Math.cos(phi2) *
-              Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-};
-
-// POST /student/verify-attendance [PROTECTED/PUBLIC DEPENDING ON ROUTE FILE]
-const verifyStudentAttendance = async (req, res) => {
+const getCourseAttendanceReport = async (req, res) => {
     try {
-        const { courseCode, studentLat, studentLng } = req.body;
+        const { courseCode, semester } = req.query;
 
-        // Search the collection database directly for an active window matching this course code
-        const activeSession = await AdminCreateSession.findOne({
-            courseCode: courseCode,
-            isSessionActive: true
+        // 1. Build Query for Admin Sessions (Filter by Course + Semester)
+        const sessionQuery = {};
+        if (courseCode) {
+            sessionQuery.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
+        }
+        if (semester && semester !== 'All') {
+            sessionQuery.semester = { $regex: new RegExp(`^${semester}$`, 'i') };
+        }
+
+        // 2. Get all matching session documents & their ObjectIds
+        const matchingSessions = await AdminCreateSession.find(sessionQuery).select('_id');
+        const totalClasses = matchingSessions.length;
+
+        if (totalClasses === 0) {
+            return res.status(200).json({
+                success: true,
+                totalClasses: 0,
+                students: []
+            });
+        }
+
+        const sessionObjectIds = matchingSessions.map(s => s._id);
+
+        // 3. Aggregate Attendance Records strictly for these session IDs
+        const attendanceData = await AttendanceRecord.aggregate([
+            // Step A: Filter attendance records matching ONLY this semester's sessions
+            { 
+                $match: { 
+                    session: { $in: sessionObjectIds } 
+                } 
+            },
+            
+            // Step B: Group by studentMatric and count unique sessions attended
+            {
+                $group: {
+                    _id: "$studentMatric", 
+                    studentMatric: { $first: "$studentMatric" },
+                    uniqueSessions: { $addToSet: "$session" } 
+                }
+            },
+
+            // Step C: Lookup student details matching 'matricno'
+            {
+                $lookup: {
+                    from: "students",
+                    localField: "studentMatric",
+                    foreignField: "matricno",
+                    as: "studentInfo"
+                }
+            },
+
+            // Step D: Flatten studentInfo array
+            {
+                $unwind: {
+                    path: "$studentInfo",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
+            // Step E: Select necessary fields
+            {
+                $project: {
+                    studentMatric: 1,
+                    attended: { $size: "$uniqueSessions" },
+                    firstname: "$studentInfo.firstname",
+                    lastname: "$studentInfo.lastname"
+                }
+            }
+        ]);
+
+        // 4. Format results for frontend UI
+        const studentReports = attendanceData.map(record => {
+            const attended = record.attended || 0;
+            const percentage = totalClasses > 0 
+                ? ((attended / totalClasses) * 100).toFixed(1) 
+                : 0;
+            
+            const fullName = record.firstname && record.lastname 
+                ? `${record.firstname} ${record.lastname}`
+                : record.firstname || record.lastname || "Unknown Student";
+
+            return {
+                id: record._id,
+                name: fullName,
+                matric: record.studentMatric || "N/A",
+                totalClasses: totalClasses,
+                attended: attended,
+                percentage: Number(percentage),
+                isEligible: Number(percentage) >= 70
+            };
         });
 
-        if (!activeSession) {
-            return res.status(404).json({
-                success: false,
-                message: "No active attendance validation window found for this course code."
-            });
-        }
-
-        // Run coordinate computation
-        const distanceMeters = getDistanceInMeters(
-            parseFloat(studentLat),
-            parseFloat(studentLng),
-            parseFloat(activeSession.latitude),
-            parseFloat(activeSession.longitude)
-        );
-
-        console.log(`[Geofence Audit] Student is ${distanceMeters.toFixed(2)}m from target boundary.`);
-
-        // Apply strict 10-meter boundary rule
-        const MAX_GEOFENCE_RADIUS = 10;
-        if (distanceMeters > MAX_GEOFENCE_RADIUS) {
-            return res.status(403).json({
-                success: false,
-                message: `Verification failed. You are outside the classroom boundary (${distanceMeters.toFixed(1)} meters away).`
-            });
-        }
-
-        // Success! (Note: You can write log inserts to an Attendance database here)
         return res.status(200).json({
             success: true,
-            message: "Location verified successfully! Your lecture attendance has been recorded. 🎉"
+            totalClasses,
+            students: studentReports
         });
 
     } catch (error) {
-        console.error("Attendance verification crash:", error);
+        console.error("Error generating attendance report:", error);
         return res.status(500).json({
             success: false,
-            message: "Internal geofencing processing engine failure.",
-            error: error.message
+            message: "Failed to generate report"
         });
+    }
+};
+
+const getStudents = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || '';
+
+        // Build search query for name or matricno
+        const searchQuery = search
+            ? {
+                $or: [
+                    { firstname: { $regex: search, $options: 'i' } },
+                    { lastname: { $regex: search, $options: 'i' } },
+                    { matricno: { $regex: search, $options: 'i' } },
+                    { department: { $regex: search, $options: 'i' } }
+                ]
+            }
+            : {};
+
+        const totalStudents = await Student.countDocuments(searchQuery);
+        const totalPages = Math.ceil(totalStudents / limit);
+
+        const studentsData = await Student.find(searchQuery)
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .lean();
+
+        // Format data for frontend dashboard
+        const formattedStudents = studentsData.map(student => {
+            const firstName = student.firstname || '';
+            const lastName = student.lastname || '';
+            const fullName = `${firstName} ${lastName}`.trim() || 'Unknown Student';
+            
+            // Extract Initials for Avatar Badge (e.g., Alex Rivers -> AR)
+            const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || 'ST';
+
+            return {
+                id: student._id,
+                name: fullName,
+                initials,
+                matricNumber: student.matricno || 'N/A',
+                department: student.department || 'Computer Science',
+                enrolledCourses: student.enrolledCourses ? `${student.enrolledCourses.length} Courses` : '5 Courses',
+                // You can compute overall status or pass default
+                status: student.status || 'Eligible' 
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            totalStudents,
+            totalPages,
+            currentPage: page,
+            students: formattedStudents
+        });
+
+    } catch (error) {
+        console.error("Error fetching students:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch students"
+        });
+    }
+};
+
+
+
+// ── 1. Create New Course ─────────────────────────────
+const createCourse = async (req, res) => {
+    try {
+        // 1. Ensure user authentication context exists
+        const currentUser = req.user||req.admin;
+        if (!currentUser) {
+            return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
+        }
+
+        const { courseCode, courseTitle, semester, unit } = req.body;
+
+        if (!courseCode || !courseTitle || !semester) {
+            return res.status(400).json({ message: 'Course Code, Title, and Semester are required.' });
+        }
+
+        // 2. Safe role and scope evaluation using optional chaining (?.)
+        const isSuperAdmin = currentUser?.role === 'super_admin';
+        const faculty = isSuperAdmin ? req.body.faculty : currentUser?.faculty;
+        const department = isSuperAdmin ? req.body.department : currentUser?.department;
+
+        if (!faculty || !department) {
+            return res.status(400).json({ message: 'Faculty and Department must be provided or attached to user account.' });
+        }
+
+        // 3. Check for existing course entry
+        const existing = await Course.findOne({
+            courseCode: courseCode.toUpperCase().trim(),
+            department,
+            semester
+        });
+
+        if (existing) {
+            return res.status(409).json({ message: `Course ${courseCode} already exists for this semester.` });
+        }
+
+        // 4. Create new course record
+        const course = await Course.create({
+            courseCode: courseCode.toUpperCase().trim(),
+            courseTitle: courseTitle.trim(),
+            faculty,
+            department,
+            semester,
+            unit: Number(unit) || 3,
+            createdBy: currentUser._id || currentUser.id
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: 'Course created successfully.',
+            course
+        });
+
+    } catch (error) {
+        console.error("❌ createCourse Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+
+const getCourses = async (req, res) => {
+    try {
+        // Fallback to req.admin if req.user is undefined
+        const user = req.user || req.admin;
+
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
+        }
+
+        // Safe role evaluation
+        const isSuperAdmin = user.role === 'super_admin';
+        const query = isSuperAdmin ? {} : { department: user.department };
+
+        if (req.query.search) {
+            query.$or = [
+                { courseCode: { $regex: req.query.search, $options: 'i' } },
+                { courseTitle: { $regex: req.query.search, $options: 'i' } }
+            ];
+        }
+
+        if (req.query.semester) {
+            query.semester = req.query.semester;
+        }
+
+        const courses = await Course.find(query).sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            count: courses.length,
+            courses
+        });
+
+    } catch (error) {
+        console.error("❌ getCourses Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
+    }
+};
+
+// ── 3. Delete Course ─────────────────────────────────
+deleteCourse = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const course = await Course.findById(id);
+
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found.' });
+        }
+
+        // Ensure non-super-admins can only delete courses in their own department
+        if (req.user.role !== 'super_admin' && course.department !== req.user.department) {
+            return res.status(403).json({ message: 'Unauthorized to delete this course.' });
+        }
+
+        await Course.findByIdAndDelete(id);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Course deleted successfully.'
+        });
+
+    } catch (error) {
+        console.error("❌ deleteCourse Error:", error);
+        return res.status(500).json({ message: 'Server error', error: error.message });
     }
 };
 
@@ -355,8 +718,16 @@ module.exports = {
     createAdmin,
     loginAdmin,
     adminDashboard,
-    adminCreateSession,
+    handleAdminCreateSession,
     adminGetAllSession,
     getSingleSession,
-    verifyStudentAttendance // 👈 Exported to mount in your student router endpoints!
+    getFacultyData,
+    getSessionAttendanceCount,
+    closeAttendanceSession,
+    endSession: closeAttendanceSession,
+    getCourseAttendanceReport,
+    getStudents,
+    createCourse,
+    getCourses,
+    deleteCourse
 };

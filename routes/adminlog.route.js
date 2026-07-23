@@ -6,38 +6,51 @@ const {
     revokeInvite,
     createAdmin,
     loginAdmin,
-    adminCreateSession,
     adminGetAllSession,
     adminDashboard,
     getSingleSession,
-    verifyStudentAttendance, // 👈 Imported the newly added geofence math verification engine
+    getFacultyData,
+    handleAdminCreateSession,
+    getSessionAttendanceCount,
+    endSession,
+    closeAttendanceSession,
+    getCourseAttendanceReport,
+    getStudents,
+    createCourse,
+    getCourses,
+    deleteCourse
 } = require("../controller/admin.controller");
 
 const router = express.Router();
 
-// ─────────────────────────────────────────────
 // Public Routes
-// ─────────────────────────────────────────────
-// Admin login to get JWT token
 router.post("/login", loginAdmin);
-
-// Anyone with a valid token from an existing admin can register
-router.post("/create", createAdmin);
+router.post("/create", createAdmin); // Registration via invite token
 
 // ─────────────────────────────────────────────
 // Protected Admin Routes (Requires valid Admin login)
 // ─────────────────────────────────────────────
+
+// Session Closure Routes (Protected + Flexible ID routing)
+router.post("/end-session/:id", protect, requireAdmin, closeAttendanceSession);
+router.patch("/close-session/:id", protect, requireAdmin, closeAttendanceSession);
+
+//Course
+router.post("/create-course", protect, requireAdmin, createCourse);
+router.get("/courses", protect, requireAdmin, getCourses);
+router.delete("/delete-course/:id", protect, requireAdmin, deleteCourse);
+
 // Fetch all sessions
 router.get("/sessionall", protect, adminGetAllSession);
 
-// SECURED: Added protect and requireAdmin so unauthorized users can't see specific coordinate nodes
+// Session Details & Monitoring
 router.get("/monitor/:id", protect, requireAdmin, getSingleSession);
 
 // Verification of administrative identity
 router.get("/dashboard", protect, requireAdmin, adminDashboard);
 
 // Setup a new active class session window
-router.post("/createsession", protect, requireAdmin, adminCreateSession);
+router.post("/createsession", protect, requireAdmin, handleAdminCreateSession);
 
 // Generate a new registration invite token
 router.post("/invite", protect, requireAdmin, generateInvite);
@@ -45,10 +58,16 @@ router.post("/invite", protect, requireAdmin, generateInvite);
 // Revoke an active invite token immediately
 router.delete("/invite", protect, requireAdmin, revokeInvite);
 
-// ─────────────────────────────────────────────
-// Student Attendance Verification Route
-// ─────────────────────────────────────────────
-// Receives student's coordinates and checks them against the 10m class fence boundary
-router.post("/verify-attendance", verifyStudentAttendance);
+// Faculty & Department list
+router.get("/faculty-list", protect, requireAdmin, getFacultyData);
 
+// Fetch attendance count for a specific session
+router.get('/session-attendance/:sessionId', protect, requireAdmin, getSessionAttendanceCount);
+
+
+// Attendance reports per course
+router.get('/reports', protect, requireAdmin, getCourseAttendanceReport)
+
+// Fetch student  records
+router.get('/studentmanagement',protect,requireAdmin,getStudents)
 module.exports = router;

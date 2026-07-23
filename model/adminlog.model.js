@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+const mongoose = require('mongoose');
 
 const adminSchema = new mongoose.Schema({
     fullName: {
@@ -15,13 +15,29 @@ const adminSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['admin'],
-        default: 'admin'
+        enum: ['super_admin', 'admin'], // 'admin' represents department/lecturer admin
+        default: 'admin',
+    },
+    faculty: {
+        type: String,
+        trim: true,
+        // Optional/not required so 'super_admin' can leave this blank or null
+        required: function () {
+            return this.role === 'admin';
+        }
+    },
+    department: {
+        type: String,
+        trim: true,
+        // Required only if they are a standard department admin
+        required: function () {
+            return this.role === 'admin';
+        }
     },
     password: {
         type: String,
         required: true,
     },
-}, { timestamps: true })
+}, { timestamps: true });
 
-module.exports = mongoose.model('Admin', adminSchema)
+module.exports = mongoose.model('Admin', adminSchema);
