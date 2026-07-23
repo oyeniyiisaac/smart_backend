@@ -568,23 +568,29 @@ const getStudents = async (req, res) => {
 
 
 // ── 1. Create New Course ─────────────────────────────
-createCourse = async (req, res) => {
+const createCourse = async (req, res) => {
     try {
+        // 1. Ensure user authentication context exists
+        if (!req.user) {
+            return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
+        }
+
         const { courseCode, courseTitle, semester, unit } = req.body;
 
         if (!courseCode || !courseTitle || !semester) {
             return res.status(400).json({ message: 'Course Code, Title, and Semester are required.' });
         }
 
-        // Determine faculty and department from authenticated Admin context
-        const faculty = req.user.role === 'super_admin' ? req.body.faculty : req.user.faculty;
-        const department = req.user.role === 'super_admin' ? req.body.department : req.user.department;
+        // 2. Safe role and scope evaluation using optional chaining (?.)
+        const isSuperAdmin = req.user?.role === 'super_admin';
+        const faculty = isSuperAdmin ? req.body.faculty : req.user?.faculty;
+        const department = isSuperAdmin ? req.body.department : req.user?.department;
 
         if (!faculty || !department) {
-            return res.status(400).json({ message: 'Faculty and Department must be provided.' });
+            return res.status(400).json({ message: 'Faculty and Department must be provided or attached to user account.' });
         }
 
-        // Check for duplicate course code in the same department and semester
+        // 3. Check for existing course entry
         const existing = await Course.findOne({
             courseCode: courseCode.toUpperCase().trim(),
             department,
@@ -595,6 +601,7 @@ createCourse = async (req, res) => {
             return res.status(409).json({ message: `Course ${courseCode} already exists for this semester.` });
         }
 
+        // 4. Create new course record
         const course = await Course.create({
             courseCode: courseCode.toUpperCase().trim(),
             courseTitle: courseTitle.trim(),
@@ -602,7 +609,7 @@ createCourse = async (req, res) => {
             department,
             semester,
             unit: Number(unit) || 3,
-            createdBy: req.user.id
+            createdBy: req.user._id || req.user.id
         });
 
         return res.status(201).json({
