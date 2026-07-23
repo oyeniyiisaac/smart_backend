@@ -631,11 +631,19 @@ const createCourse = async (req, res) => {
     }
 };
 
-// ── 2. Get Department Courses ────────────────────────
-getCourses = async (req, res) => {
+
+const getCourses = async (req, res) => {
     try {
-        // Enforce department filter unless super_admin
-        const query = req.user.role === 'super_admin' ? {} : { department: req.user.department };
+        // Fallback to req.admin if req.user is undefined
+        const user = req.user || req.admin;
+
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
+        }
+
+        // Safe role evaluation
+        const isSuperAdmin = user.role === 'super_admin';
+        const query = isSuperAdmin ? {} : { department: user.department };
 
         if (req.query.search) {
             query.$or = [
