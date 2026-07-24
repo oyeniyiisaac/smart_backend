@@ -39,7 +39,8 @@ const register = async (req, res) => {
             matricno,
             faculty,
             department,
-            password: hashedPassword
+            password: hashedPassword,
+            confirmpassword: hashedPassword,
         });
 
         const result = await newStudent.save();
