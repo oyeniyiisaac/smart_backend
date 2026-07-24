@@ -4,6 +4,8 @@ const AttendanceRecord = require('../model/attendanceRecord.model');
 const bcrypt = require('bcryptjs');
 const { Resend } = require('resend');
 const jwt = require('jsonwebtoken');
+const CourseRegistration = require('../model/submitCourseReg.model');
+
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -460,6 +462,131 @@ const myAttendance = async (req, res) => {
     }
 };
 
+const submitCourseRegistration = async (req, res) => {
+    try {
+        const student = { id: req.user.id, matricno: req.user.matricno };
+        const { academicSession, semester, courses } = req.body;
+
+        // Basic validation
+        if (!academicSession || !semester || !courses || !Array.isArray(courses) || courses.length === 0) {
+            return res.status(400).json({ 
+                message: 'Please provide academic session, semester, and at least one course.' 
+            });
+        }
+
+        // Check if the student has already registered for this session & semester
+        const existingRegistration = await CourseRegistration.findOne({
+            studentId: student.id,
+            matricno: student.matricno, // ✅ Fixed: Matched schema field name
+            academicSession,
+            semester,
+        });
+
+        if (existingRegistration) {
+            return res.status(400).json({ 
+                message: `You have already submitted course registration for ${academicSession} (${semester}).` 
+            });
+        }
+
+        // Calculate total units from the courses array
+        const totalUnits = courses.reduce((sum, course) => {
+            return sum + (Number(course.unit) || Number(course.units) || 0);
+        }, 0);
+
+        // Sanitize course objects to ensure expected shape
+        const formattedCourses = courses.map((course) => ({
+            courseId: course.courseId || course._id,
+            courseCode: course.courseCode,
+            courseTitle: course.courseTitle,
+            unit: Number(course.unit) || Number(course.units) || 0,
+        }));
+
+        // Create new registration record
+        const newRegistration = new CourseRegistration({
+            studentId: student.id,    // ✅ Fixed: Used student.id
+            matricno: student.matricno, // ✅ Added: Included matricno
+            academicSession,
+            semester,
+            courses: formattedCourses,
+            totalUnits,
+        });
+
+        const savedRegistration = await newRegistration.save();
+
+        return res.status(201).json({
+            message: 'Course registration submitted successfully.',
+            data: savedRegistration,
+        });
+    } catch (error) {
+        console.error('Course registration error:', error);
+        
+        // Handle duplicate key index error (if duplicate submit happens concurrently)
+        if (error.code === 11000) {
+            return res.status(400).json({
+                message: 'Course registration already exists for this semester.',
+            });
+        }
+
+        return res.status(500).json({ 
+            message: 'Server error while submitting course registration.',
+            error: error.message 
+        });
+    }
+};
+
+// ── 2. Get Student's Registered Courses ─────────────────────────────────────
+const getStudentRegistrations = async (req, res) => {
+    try {
+        const studentId = req.user.id; // Extracted from JWT token
+
+        const registrations = await CourseRegistration.find({ 
+            studentId,
+            status: 'Approved',
+        })
+            .populate('studentId', 'firstname lastname email matricno department faculty')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            count: registrations.length,
+            data: registrations,
+        });
+    } catch (error) {
+        console.error('Fetch registration error:', error);
+        return res.status(500).json({ 
+            message: 'Server error while fetching registered courses.',
+            error: error.message 
+        });
+    }
+};
+// GET /student/my-courses
+const getMyCourses = async (req, res) => {
+    try {
+        // req.user comes from your auth middleware
+        const studentId = req.user.id || req.user._id;
+
+        // Fetch all course registrations for this student
+        // Populates or includes nested course details if needed
+        const registrations = await CourseRegistration.find({ studentId })
+            .sort({ createdAt: -1 }); // Latest registrations first
+
+        return res.status(200).json({
+            success: true,
+            count: registrations.length,
+            data: registrations,
+        });
+    } catch (error) {
+        console.error('Error in getMyCourses:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error while fetching enrolled courses.',
+            error: error.message,
+        });
+    }
+};
+
+
+
 module.exports = { 
     register, 
     signin, 
@@ -468,5 +595,8 @@ module.exports = {
     verifyStudentLocation, 
     getActiveSessionsForStudent, 
     markAbsentees, 
-    myAttendance 
+    myAttendance,
+    submitCourseRegistration,
+    getStudentRegistrations,
+    getMyCourses,
 };

@@ -15,6 +15,7 @@ app.use(express.json())
 app.use(cors())
 app.use('/', UserRoute)
 app.use('/admin', AdminRoute)
+require('./autoapprove.js')
 
 mongoose.connect(URL)
     .then(() => {
