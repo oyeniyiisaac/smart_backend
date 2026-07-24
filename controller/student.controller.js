@@ -28,9 +28,9 @@ const register = async (req, res) => {
             return res.status(400).json({ message: "Email already exists." });
         }
 
-        // Hash password before saving
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        // // Hash password before saving
+        // const salt = await bcrypt.genSalt(10);
+        // const hashedPassword = await bcrypt.hash(password, salt);
 
         const newStudent = new StudentModel({
             firstname,
@@ -39,8 +39,8 @@ const register = async (req, res) => {
             matricno,
             faculty,
             department,
-            password: hashedPassword,
-            confirmpassword: hashedPassword,
+            password,
+            confirmpassword,
         });
 
         const result = await newStudent.save();
