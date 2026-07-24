@@ -56,6 +56,6 @@ const courseRegistrationSchema = new mongoose.Schema({
 
 
 
-courseRegistrationSchema.index({ studentId: 1, academicSession: 1, semester: 1 }, { unique: true });
+courseRegistrationSchema.index({ studentId: 1, academicSession: 1, semester: 1,status: 1, createdAt: 1 }, { unique: true });
 
 module.exports = mongoose.model('CourseRegistration', courseRegistrationSchema);
