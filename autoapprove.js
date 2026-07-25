@@ -3,7 +3,7 @@ const CourseRegistration = require('./model/submitCourseReg.model');
 
 // Runs every night at midnight (00:00)
 // Tip: If you want it to run every hour instead of just at midnight, change '0 0 * * *' to '0 * * * *'
-cron.schedule('0 0 * * *', async () => {
+cron.schedule('0 * * * *', async () => {
     try {
         // Calculate cutoff timestamp (1 hour ago)
         const ONE_HOUR_MS = 1 * 60 * 60 * 1000;
