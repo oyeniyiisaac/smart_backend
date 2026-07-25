@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { Resend } = require('resend');
 const jwt = require('jsonwebtoken');
 const CourseRegistration = require('../model/submitCourseReg.model');
+const { cloudinary, upload } = require('../Utils/cloudinary');
 
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -586,6 +587,60 @@ const getMyCourses = async (req, res) => {
 };
 
 
+const uploadProfilePicture = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'Please upload an image file.' });
+        }
+
+        const { Readable } = require('stream');
+
+        // Helper promise to upload via streaming to Cloudinary
+        const uploadToCloudinary = (fileBuffer) => {
+            return new Promise((resolve, reject) => {
+                const uploadStream = cloudinary.uploader.upload_stream(
+                    {
+                        folder: 'student_profiles',
+                        transformation: [{ width: 300, height: 300, crop: 'fill', gravity: 'face' }],
+                    },
+                    (error, result) => {
+                        if (error) return reject(error);
+                        resolve(result);
+                    }
+                );
+
+                const stream = new Readable();
+                stream.push(fileBuffer);
+                stream.push(null); // End of stream
+                stream.pipe(uploadStream);
+            });
+        };
+
+        const uploadResult = await uploadToCloudinary(req.file.buffer);
+
+        // Update student record with the uploaded image URL
+        const studentId = req.user.id || req.user._id;
+        const updatedStudent = await StudentModel.findByIdAndUpdate(
+            studentId,
+            { profilePicture: uploadResult.secure_url },
+            { returnDocument: 'after' }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Profile picture updated successfully.',
+            profilePicture: updatedStudent.profilePicture,
+        });
+    } catch (error) {
+        console.error('Cloudinary upload error:', error);
+        return res.status(500).json({
+            message: 'Failed to upload profile picture.',
+            error: error.message,
+        });
+    }
+};
+
+
 
 module.exports = { 
     register, 
@@ -599,4 +654,5 @@ module.exports = {
     submitCourseRegistration,
     getStudentRegistrations,
     getMyCourses,
+    uploadProfilePicture
 };
