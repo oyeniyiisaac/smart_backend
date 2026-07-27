@@ -444,15 +444,24 @@ const myAttendance = async (req, res) => {
         }
 
         const cleanMatric = String(studentMatric).trim();
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
 
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
             .populate('session')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+        const total = await AttendanceRecord.countDocuments({ studentMatric: cleanMatric });
 
         return res.status(200).json({
             success: true,
-            count: records.length,
-            records
+            total,
+            page,
+            limit,
+            records,
+            totalPages: Math.ceil(total / limit)
         });
 
     } catch (error) {
