@@ -142,6 +142,7 @@ const dashboard = async (req, res) => {
                 matricno: user.matricno,
                 department: user.department || null,
                 faculty: user.faculty || null,
+                profilePicture: user.profilePicture || null,
             },
         });
 
