@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { Resend } = require('resend');
 const jwt = require('jsonwebtoken');
 const CourseRegistration = require('../model/submitCourseReg.model');
-const { cloudinary, upload } = require('../Utils/cloudinary');
+const cloudinary = require('cloudinary').v2;
 
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -60,9 +60,9 @@ const register = async (req, res) => {
             console.error("⚠️ Resend Email Error:", emailErr.message);
         }
 
-        return res.status(201).json({ 
-            message: 'Registration successful', 
-            data: { id: result._id, email: result.email, matricno: result.matricno } 
+        return res.status(201).json({
+            message: 'Registration successful',
+            data: { id: result._id, email: result.email, matricno: result.matricno }
         });
 
     } catch (error) {
@@ -284,15 +284,15 @@ const verifyStudentLocation = async (req, res) => {
 
         const allowedRadius = 200; // Radius in meters
         const R = 6371e3; // Earth radius in meters
-        
+
         const phi1 = (lat1 * Math.PI) / 180;
         const phi2 = (lat2 * Math.PI) / 180;
         const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
         const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
 
         const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-                  Math.cos(phi1) * Math.cos(phi2) *
-                  Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
 
         const c = 2 * Math.atan2(Math.sqrt(Math.min(1, a)), Math.sqrt(1 - Math.min(1, a)));
         const calculatedDistance = R * c;
@@ -470,8 +470,8 @@ const submitCourseRegistration = async (req, res) => {
 
         // Basic validation
         if (!academicSession || !semester || !courses || !Array.isArray(courses) || courses.length === 0) {
-            return res.status(400).json({ 
-                message: 'Please provide academic session, semester, and at least one course.' 
+            return res.status(400).json({
+                message: 'Please provide academic session, semester, and at least one course.'
             });
         }
 
@@ -484,8 +484,8 @@ const submitCourseRegistration = async (req, res) => {
         });
 
         if (existingRegistration) {
-            return res.status(400).json({ 
-                message: `You have already submitted course registration for ${academicSession} (${semester}).` 
+            return res.status(400).json({
+                message: `You have already submitted course registration for ${academicSession} (${semester}).`
             });
         }
 
@@ -520,7 +520,7 @@ const submitCourseRegistration = async (req, res) => {
         });
     } catch (error) {
         console.error('Course registration error:', error);
-        
+
         // Handle duplicate key index error (if duplicate submit happens concurrently)
         if (error.code === 11000) {
             return res.status(400).json({
@@ -528,9 +528,9 @@ const submitCourseRegistration = async (req, res) => {
             });
         }
 
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: 'Server error while submitting course registration.',
-            error: error.message 
+            error: error.message
         });
     }
 };
@@ -540,7 +540,7 @@ const getStudentRegistrations = async (req, res) => {
     try {
         const studentId = req.user.id; // Extracted from JWT token
 
-        const registrations = await CourseRegistration.find({ 
+        const registrations = await CourseRegistration.find({
             studentId,
             status: 'Approved',
         })
@@ -554,9 +554,9 @@ const getStudentRegistrations = async (req, res) => {
         });
     } catch (error) {
         console.error('Fetch registration error:', error);
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: 'Server error while fetching registered courses.',
-            error: error.message 
+            error: error.message
         });
     }
 };
@@ -586,55 +586,60 @@ const getMyCourses = async (req, res) => {
     }
 };
 
+const cloud_username = process.env.CLOUDINARY_CLOUD_NAME;
+const api_userkey = process.env.CLOUDINARY_API_KEY;
+const api_usersecret = process.env.CLOUDINARY_API_SECRET;
+
+const cloudinary_config = cloudinary.config({
+    cloud_name: cloud_username,
+    api_key: api_userkey,
+    api_secret: api_usersecret,
+});
+
+console.log(cloudinary_config);
+
+
+
 
 const uploadProfilePicture = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: 'Please upload an image file.' });
+        const { image } = req.body; // Base64 string sent from client
+
+        if (!image) {
+            return res.status(400).json({
+                success: false,
+                message: "No image string provided in request body.",
+            });
         }
 
-        const { Readable } = require('stream');
+        // Cloudinary natively accepts Base64 Data URIs
+        const uploadResult = await cloudinary.uploader.upload(image, {
+            folder: "student_profiles",
+        });
 
-        // Helper promise to upload via streaming to Cloudinary
-        const uploadToCloudinary = (fileBuffer) => {
-            return new Promise((resolve, reject) => {
-                const uploadStream = cloudinary.uploader.upload_stream(
-                    {
-                        folder: 'student_profiles',
-                        transformation: [{ width: 300, height: 300, crop: 'fill', gravity: 'face' }],
-                    },
-                    (error, result) => {
-                        if (error) return reject(error);
-                        resolve(result);
-                    }
-                );
+        const profilePictureUrl = uploadResult.secure_url;
+        const publicId = uploadResult.public_id;
+        console.log(profilePictureUrl);
 
-                const stream = new Readable();
-                stream.push(fileBuffer);
-                stream.push(null); // End of stream
-                stream.pipe(uploadStream);
-            });
-        };
-
-        const uploadResult = await uploadToCloudinary(req.file.buffer);
-
-        // Update student record with the uploaded image URL
-        const studentId = req.user.id || req.user._id;
-        const updatedStudent = await StudentModel.findByIdAndUpdate(
-            studentId,
-            { profilePicture: uploadResult.secure_url },
+        // Update MongoDB
+        const userId = req.user.id || req.user._id;
+        const updateStudent = await StudentModel.findByIdAndUpdate(
+            userId,
+            { profilePicture: profilePictureUrl },
             { returnDocument: 'after' }
         );
-
+        console.log(updateStudent);
         return res.status(200).json({
             success: true,
-            message: 'Profile picture updated successfully.',
-            profilePicture: updatedStudent.profilePicture,
+            message: "Profile picture uploaded successfully!",
+            data: updateStudent, profilePictureUrl
         });
+
     } catch (error) {
-        console.error('Cloudinary upload error:', error);
+        console.error("❌ Upload error:", error);
         return res.status(500).json({
-            message: 'Failed to upload profile picture.',
+            success: false,
+            message: "Server error uploading profile picture.",
             error: error.message,
         });
     }
@@ -642,14 +647,14 @@ const uploadProfilePicture = async (req, res) => {
 
 
 
-module.exports = { 
-    register, 
-    signin, 
-    login, 
-    dashboard, 
-    verifyStudentLocation, 
-    getActiveSessionsForStudent, 
-    markAbsentees, 
+module.exports = {
+    register,
+    signin,
+    login,
+    dashboard,
+    verifyStudentLocation,
+    getActiveSessionsForStudent,
+    markAbsentees,
     myAttendance,
     submitCourseRegistration,
     getStudentRegistrations,

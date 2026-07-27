@@ -20,7 +20,8 @@ const studentSchema = new mongoose.Schema({
         }
     },
     password: { type: String, required: true },
-    confirmpassword: { type: String, required: true }
+    confirmpassword: { type: String, required: true },
+    profilePicture: { type: String, default: '' },
 }, {
     timestamps: {
         currentTime: () => new Date(Date.now() + 60 * 60 * 1000)

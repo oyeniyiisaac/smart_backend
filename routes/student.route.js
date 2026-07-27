@@ -2,7 +2,6 @@ const express = require('express')
 const { register, signin, login, dashboard, verifyStudentLocation, getActiveSessionsForStudent, myAttendance, getStudentRegistrations, submitCourseRegistration, getMyCourses, uploadProfilePicture } = require('../controller/student.controller')
 const verifyToken = require('../middleware.auth');
 const { getCourses } = require('../controller/admin.controller');
-const { upload } = require('../Utils/cloudinary');
 const router = express.Router()
 
 router.get('/signin', signin)
@@ -18,13 +17,7 @@ router.post('/register', register)
 router.post('/login', login)
 router.post("/verify-attendance", verifyToken, verifyStudentLocation);
 router.post("/submit-course-registration", verifyToken, submitCourseRegistration);
-router.post(
-    '/upload-avatar',
-    verifyToken,
-    upload.single('profilePicture'),
-    uploadProfilePicture
-);
-
+router.post("/upload-profile-picture", verifyToken, uploadProfilePicture);
 
 
 module.exports = router
