@@ -446,14 +446,22 @@ const myAttendance = async (req, res) => {
         const cleanMatric = String(studentMatric).trim();
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 5;
-        const skip = (page - 1) * limit;
+        const search = req.query.search
+        const searchQuery = search ?{
+            $or:[
+                {courses:{$regex: search, $option:'i'}},
+                {academicSession:{$regex: search, $option:'i'}}
+            ]
+        }
+        :{};
 
+        const total = await AttendanceRecord.countDocuments({ studentMatric: cleanMatric });
+        const totalPages = Math.ceil(total / limit)
         const records = await AttendanceRecord.find({ studentMatric: cleanMatric })
             .populate('session')
             .sort({ createdAt: -1 })
-            .skip(skip)
+            .skip((page- 1) * limit)
             .limit(limit);
-        const total = await AttendanceRecord.countDocuments({ studentMatric: cleanMatric });
 
         return res.status(200).json({
             success: true,
@@ -461,7 +469,7 @@ const myAttendance = async (req, res) => {
             page,
             limit,
             records,
-            totalPages: Math.ceil(total / limit)
+            totalPages
         });
 
     } catch (error) {
