@@ -521,13 +521,34 @@ const getCourseAttendanceReport = async (req, res) => {
 
 const getStudents = async (req, res) => {
     try {
+        const user = req.user || req.admin;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const search = req.query.search || '';
 
-        // Build search query for name or matricno
+        // Role-based scoping query
+        const roleScope = {};
+        if (user?.role === 'super_admin') {
+            if (user.faculty) {
+                roleScope.faculty = { $regex: new RegExp(`^${user.faculty.trim()}$`, 'i') };
+            }
+        } else if (user?.role === 'admin') {
+            if (user.department) {
+                roleScope.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            }
+        } else if (user?.role === 'course_rep') {
+            if (user.department) {
+                roleScope.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            }
+            if (user.level) {
+                const rawLevel = user.level.trim().replace(/L$/i, '');
+                roleScope.level = { $regex: new RegExp(rawLevel, 'i') };
+            }
+        }
+
         const searchQuery = search
             ? {
+                ...roleScope,
                 $or: [
                     { firstname: { $regex: search, $options: 'i' } },
                     { lastname: { $regex: search, $options: 'i' } },
@@ -535,7 +556,7 @@ const getStudents = async (req, res) => {
                     { department: { $regex: search, $options: 'i' } }
                 ]
             }
-            : {};
+            : roleScope;
 
         const totalStudents = await Student.countDocuments(searchQuery);
         const totalPages = Math.ceil(totalStudents / limit);
@@ -560,8 +581,8 @@ const getStudents = async (req, res) => {
                 initials,
                 matricNumber: student.matricno || 'N/A',
                 department: student.department || 'Computer Science',
+                level: student.level || '100L',
                 enrolledCourses: student.enrolledCourses ? `${student.enrolledCourses.length} Courses` : '5 Courses',
-                // You can compute overall status or pass default
                 status: student.status || 'Eligible' 
             };
         });
