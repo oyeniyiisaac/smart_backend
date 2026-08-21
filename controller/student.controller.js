@@ -804,10 +804,46 @@ const requestStudentPasswordReset = async (req, res) => {
             expiresAt
         });
 
+        // Construct direct one-click reset link
+        const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+        const resetLink = `${clientOrigin}/forgot-password?email=${encodeURIComponent(student.email)}&otp=${otp}&type=student`;
+
+        // Send Email via Resend
+        try {
+            await resend.emails.send({
+                from: "onboarding@resend.dev",
+                to: student.email,
+                subject: "🔐 Student Password Reset - Smart Attendance System",
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                        <div style="background-color: #0a643a; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h2 style="color: #ffffff; margin: 0;">Smart Attendance System</h2>
+                            <p style="color: #baeed9; margin: 5px 0 0 0; font-size: 14px;">Student Account Password Reset</p>
+                        </div>
+                        <div style="padding: 24px; background-color: #ffffff;">
+                            <p style="font-size: 16px; color: #333333;">Hello <strong>${student.firstname} ${student.lastname || ''}</strong>,</p>
+                            <p style="font-size: 14px; color: #555555; line-height: 1.5;">We received a request to reset your student portal password. Use the 6-digit verification code below or click the direct button to proceed:</p>
+                            <div style="text-align: center; margin: 24px 0;">
+                                <div style="display: inline-block; padding: 14px 28px; background-color: #e6f4ea; border: 2px dashed #0a643a; border-radius: 8px; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0a643a; font-family: monospace;">
+                                    ${otp}
+                                </div>
+                            </div>
+                            <div style="text-align: center; margin: 20px 0;">
+                                <a href="${resetLink}" style="background-color: #0a643a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">Reset Password Directly</a>
+                            </div>
+                            <p style="font-size: 12px; color: #888888; text-align: center;">This verification code and link will expire in <strong>15 minutes</strong>. If you did not request a password reset, you can safely ignore this email.</p>
+                        </div>
+                    </div>
+                `
+            });
+        } catch (emailErr) {
+            console.error("⚠️ Resend Email Error (Student):", emailErr.message);
+        }
+
+        // Return secure response WITHOUT leaking OTP to the browser UI
         return res.status(200).json({
             success: true,
-            message: `Password reset OTP generated. Valid for 15 minutes.`,
-            otp: otp, // In dev/demo environment returned directly for instant recovery
+            message: `A 6-digit OTP code and password reset link have been sent to ${student.email}. Please check your Gmail/inbox.`,
             email: student.email
         });
     } catch (err) {

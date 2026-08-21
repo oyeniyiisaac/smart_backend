@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { Resend } = require('resend');
 const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
@@ -9,6 +10,8 @@ const PasswordReset = require('../model/passwordReset.model');
 const Course = require('../model/course.model');
 const Student = require('../model/student.model');
 const { markAbsentees } = require('./student.controller');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTHENTICATION MIDDLEWARES
@@ -983,10 +986,46 @@ const requestAdminPasswordReset = async (req, res) => {
             expiresAt
         });
 
+        // Construct direct one-click reset link
+        const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+        const resetLink = `${clientOrigin}/forgot-password?email=${encodeURIComponent(admin.email)}&otp=${otp}&type=admin`;
+
+        // Send Email via Resend
+        try {
+            await resend.emails.send({
+                from: "onboarding@resend.dev",
+                to: admin.email,
+                subject: "🔐 Admin Password Reset - Smart Attendance System",
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
+                        <div style="background-color: #0a643a; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                            <h2 style="color: #ffffff; margin: 0;">Smart Attendance System</h2>
+                            <p style="color: #baeed9; margin: 5px 0 0 0; font-size: 14px;">Administrative Password Reset</p>
+                        </div>
+                        <div style="padding: 24px; background-color: #ffffff;">
+                            <p style="font-size: 16px; color: #333333;">Hello <strong>${admin.fullName || 'Admin'}</strong>,</p>
+                            <p style="font-size: 14px; color: #555555; line-height: 1.5;">We received a request to reset your password. Use the 6-digit verification code below or click the direct link to set your new password:</p>
+                            <div style="text-align: center; margin: 24px 0;">
+                                <div style="display: inline-block; padding: 14px 28px; background-color: #e6f4ea; border: 2px dashed #0a643a; border-radius: 8px; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0a643a; font-family: monospace;">
+                                    ${otp}
+                                </div>
+                            </div>
+                            <div style="text-align: center; margin: 20px 0;">
+                                <a href="${resetLink}" style="background-color: #0a643a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">Reset Password Directly</a>
+                            </div>
+                            <p style="font-size: 12px; color: #888888; text-align: center;">This code and link are valid for <strong>15 minutes</strong>. If you did not request this, please ignore this email.</p>
+                        </div>
+                    </div>
+                `
+            });
+        } catch (emailErr) {
+            console.error("⚠️ Resend Email Error (Admin):", emailErr.message);
+        }
+
+        // Return secure response WITHOUT leaking OTP to the browser UI
         return res.status(200).json({
             success: true,
-            message: "Password reset OTP generated. Valid for 15 minutes.",
-            otp,
+            message: `A 6-digit OTP code and password reset link have been sent to ${admin.email}. Please check your inbox or spam folder.`,
             email: admin.email
         });
     } catch (err) {
