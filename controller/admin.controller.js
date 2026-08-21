@@ -408,6 +408,7 @@ const closeAttendanceSession = async (req, res) => {
 };
 
 
+<<<<<<< Updated upstream
 const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
@@ -518,6 +519,16 @@ const getCourseAttendanceReport = async (req, res) => {
         });
     }
 };
+=======
+// Internal utility: computes distance in meters over curved space
+// POST /student/verify-attendance
+
+// POST /admin/attendance-entry [PROTECTED]
+// Marks student as present for the current active session (manual override)
+// const recordStudentAttendance = async (req, res) => {
+//     try {
+//         const { matricNo, courseCode, level, session, semester } = req.body;
+>>>>>>> Stashed changes
 
 const getStudents = async (req, res) => {
     try {
