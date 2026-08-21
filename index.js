@@ -28,40 +28,7 @@ mongoose.connect(URL)
     })
 
 
-function startCleanupJob() {
-    // Run every 5 minutes to check for expired sessions
-    cron.schedule('*/5 * * * *', async () => {
-        try {
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // Adjust session limit as needed
-
-            // 1. Find all active sessions that have been open for longer than 1 hour
-            const expiredSessions = await AdminCreateSession.find({
-                isSessionActive: true,
-                createdAt: { $lt: oneHourAgo }
-            });
-
-            if (expiredSessions.length > 0) {
-                console.log(`🧹 Found ${expiredSessions.length} expired session(s) to close.`);
-
-                // 2. Loop through each expired session to close it and record absences
-                for (const session of expiredSessions) {
-                    session.isSessionActive = false;
-                    await session.save();
-
-                    console.log(`🔒 Closed expired session for ${session.courseCode}. Processing absentees...`);
-
-                    // 3. Trigger the absentee generator for this specific session
-                    await markAbsentees(session._id, session.courseCode);
-                }
-                console.log("✅ Auto-cleanup and absentee run finished successfully.");
-            }
-
-        } catch (err) {
-            console.error("❌ Auto-Cleanup Cron Error:", err);
-        }
-    });
-    console.log("⏰ Attendance auto-cleanup cron job initialized.");
-}
+// Automated Session Expiration & Absentee Cleanup Cron Job (Runs every 5 minutes)
 cron.schedule('*/5 * * * *', async () => {
     try {
         console.log("⏰ Running automated session expiration checker...");
@@ -69,7 +36,7 @@ cron.schedule('*/5 * * * *', async () => {
         const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour limit
         const cutoffTime = new Date(Date.now() - sessionDurationLimit);
 
-        // Find active sessions older than 1 hour or past dateTimeTo
+        // Find active sessions older than 1 hour
         const expiredSessions = await AdminCreateSession.find({
             isSessionActive: true,
             createdAt: { $lt: cutoffTime }
@@ -89,7 +56,7 @@ cron.schedule('*/5 * * * *', async () => {
             // Run absent generator
             await markAbsentees(session._id, session.courseCode, session.department);
         }
-
+        console.log("✅ Auto-cleanup and absentee run finished successfully.");
     } catch (error) {
         console.error("❌ Error in session cleanup cron job:", error);
     }

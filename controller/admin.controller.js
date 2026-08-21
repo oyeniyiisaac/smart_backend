@@ -408,7 +408,6 @@ const closeAttendanceSession = async (req, res) => {
 };
 
 
-<<<<<<< Updated upstream
 const getCourseAttendanceReport = async (req, res) => {
     try {
         const { courseCode, semester } = req.query;
@@ -519,16 +518,6 @@ const getCourseAttendanceReport = async (req, res) => {
         });
     }
 };
-=======
-// Internal utility: computes distance in meters over curved space
-// POST /student/verify-attendance
-
-// POST /admin/attendance-entry [PROTECTED]
-// Marks student as present for the current active session (manual override)
-// const recordStudentAttendance = async (req, res) => {
-//     try {
-//         const { matricNo, courseCode, level, session, semester } = req.body;
->>>>>>> Stashed changes
 
 const getStudents = async (req, res) => {
     try {
@@ -721,6 +710,62 @@ deleteCourse = async (req, res) => {
     }
 };
 
+const getDashboardStats = async (req, res) => {
+    try {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const totalStudents = await Student.countDocuments();
+        const presentToday = await AttendanceRecord.countDocuments({
+            status: 'Present',
+            createdAt: { $gte: startOfDay }
+        });
+        const absentToday = await AttendanceRecord.countDocuments({
+            status: 'Absent',
+            createdAt: { $gte: startOfDay }
+        });
+
+        // Compute students flagged with <70% overall attendance
+        const allSessionsCount = await AdminCreateSession.countDocuments();
+        let flaggedLowAttendance = 0;
+
+        if (allSessionsCount > 0) {
+            const studentStats = await AttendanceRecord.aggregate([
+                { $match: { status: 'Present' } },
+                { $group: { _id: '$studentMatric', attended: { $sum: 1 } } }
+            ]);
+
+            const lowAttendedMatrics = new Set(
+                studentStats
+                    .filter(st => (st.attended / allSessionsCount) * 100 < 70)
+                    .map(st => st._id)
+            );
+
+            const attendedMatrics = new Set(studentStats.map(st => st._id));
+            const allStudentsList = await Student.find({}, 'matricno');
+            allStudentsList.forEach(st => {
+                if (!attendedMatrics.has(st.matricno)) {
+                    lowAttendedMatrics.add(st.matricno);
+                }
+            });
+            flaggedLowAttendance = lowAttendedMatrics.size;
+        }
+
+        return res.status(200).json({
+            success: true,
+            stats: {
+                totalStudents,
+                presentToday,
+                absentToday,
+                flaggedLowAttendance
+            }
+        });
+    } catch (error) {
+        console.error("❌ Error fetching dashboard stats:", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
+    }
+};
+
 module.exports = {
     protect,
     requireAdmin,
@@ -740,5 +785,6 @@ module.exports = {
     getStudents,
     createCourse,
     getCourses,
-    deleteCourse
+    deleteCourse,
+    getDashboardStats
 };

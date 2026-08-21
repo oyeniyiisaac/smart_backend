@@ -8,7 +8,6 @@ const {
     loginAdmin,
     adminGetAllSession,
     adminDashboard,
-<<<<<<< Updated upstream
     getSingleSession,
     getFacultyData,
     handleAdminCreateSession,
@@ -19,10 +18,8 @@ const {
     getStudents,
     createCourse,
     getCourses,
-    deleteCourse
-=======
-    getSingleSession, // 👈 Imported the newly added geofence math verification engine
->>>>>>> Stashed changes
+    deleteCourse,
+    getDashboardStats
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -34,6 +31,9 @@ router.post("/create", createAdmin); // Registration via invite token
 // ─────────────────────────────────────────────
 // Protected Admin Routes (Requires valid Admin login)
 // ─────────────────────────────────────────────
+
+// Dashboard Stats
+router.get("/dashboard-stats", protect, requireAdmin, getDashboardStats);
 
 // Session Closure Routes (Protected + Flexible ID routing)
 router.post("/end-session/:id", protect, requireAdmin, closeAttendanceSession);
@@ -62,16 +62,8 @@ router.post("/invite", protect, requireAdmin, generateInvite);
 // Revoke an active invite token immediately
 router.delete("/invite", protect, requireAdmin, revokeInvite);
 
-<<<<<<< Updated upstream
 // Faculty & Department list
 router.get("/faculty-list", protect, requireAdmin, getFacultyData);
-=======
-// ─────────────────────────────────────────────
-// Student Attendance Verification Route
-// ─────────────────────────────────────────────
-// Receives student's coordinates and checks them against the 10m class fence boundary
-
->>>>>>> Stashed changes
 
 // Fetch attendance count for a specific session
 router.get('/session-attendance/:sessionId', protect, requireAdmin, getSessionAttendanceCount);
