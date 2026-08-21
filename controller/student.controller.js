@@ -357,7 +357,7 @@ const getActiveSessionsForStudent = async (req, res) => {
             return res.status(404).json({ message: "Student profile not found." });
         }
 
-        const { faculty: studentFaculty, department: studentDepartment } = student;
+        const { faculty: studentFaculty, department: studentDepartment, level: rawLevel } = student;
 
         if (!studentFaculty || !studentDepartment) {
             return res.status(400).json({
@@ -365,12 +365,16 @@ const getActiveSessionsForStudent = async (req, res) => {
             });
         }
 
+        const studentLevel = rawLevel ? rawLevel.trim().replace(/L$/i, '') : '';
+        const levelFilter = studentLevel ? { level: { $regex: new RegExp(studentLevel, 'i') } } : {};
+
         const now = new Date();
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
             dateTimeTo: { $gt: now },
             faculty: { $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') },
-            department: { $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') }
+            department: { $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') },
+            ...levelFilter
         }).sort({ createdAt: -1 });
 
         return res.status(200).json({

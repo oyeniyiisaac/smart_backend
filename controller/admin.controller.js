@@ -285,11 +285,30 @@ const adminGetAllSession = async (req, res) => {
 
 const getSingleSession = async (req, res) => {
     try {
+        const user = req.user || req.admin;
         const { id } = req.params;
 
         const session = await AdminCreateSession.findById(id);
         if (!session) {
             return res.status(404).json({ success: false, message: "Session not found." });
+        }
+
+        // Strict Role-Based Data Isolation Check
+        if (user?.role === 'super_admin' && user.faculty) {
+            if (session.faculty && session.faculty.toLowerCase() !== user.faculty.toLowerCase()) {
+                return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Faculty." });
+            }
+        } else if (user?.role === 'admin' || user?.role === 'course_rep') {
+            if (user.department && session.department && session.department.toLowerCase() !== user.department.toLowerCase()) {
+                return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Department." });
+            }
+            if (user.role === 'course_rep' && user.level && session.level) {
+                const userLevel = user.level.trim().replace(/L$/i, '');
+                const sessionLevel = session.level.trim().replace(/L$/i, '');
+                if (userLevel.toLowerCase() !== sessionLevel.toLowerCase()) {
+                    return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Level." });
+                }
+            }
         }
 
         const attendanceRecords = await AttendanceRecord.find({ session: id });
@@ -410,10 +429,26 @@ const closeAttendanceSession = async (req, res) => {
 
 const getCourseAttendanceReport = async (req, res) => {
     try {
+        const user = req.user || req.admin;
         const { courseCode, semester } = req.query;
 
-        // 1. Build Query for Admin Sessions (Filter by Course + Semester)
+        // 1. Build Role-Scoped Query for Admin Sessions
         const sessionQuery = {};
+
+        if (user?.role === 'super_admin') {
+            if (user.faculty) {
+                sessionQuery.faculty = { $regex: new RegExp(`^${user.faculty.trim()}$`, 'i') };
+            }
+        } else if (user?.role === 'admin' || user?.role === 'course_rep') {
+            if (user.department) {
+                sessionQuery.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            }
+            if (user.role === 'course_rep' && user.level) {
+                const rawLevel = user.level.trim().replace(/L$/i, '');
+                sessionQuery.level = { $regex: new RegExp(rawLevel, 'i') };
+            }
+        }
+
         if (courseCode) {
             sessionQuery.courseCode = { $regex: new RegExp(`^${courseCode}$`, 'i') };
         }
@@ -674,9 +709,21 @@ const getCourses = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized: Missing user authentication context.' });
         }
 
-        // Safe role evaluation
-        const isSuperAdmin = user.role === 'super_admin';
-        const query = isSuperAdmin ? {} : { department: user.department };
+        const query = {};
+
+        if (user.role === 'super_admin') {
+            if (user.faculty) {
+                query.faculty = { $regex: new RegExp(`^${user.faculty.trim()}$`, 'i') };
+            }
+        } else if (user.role === 'admin' || user.role === 'course_rep') {
+            if (user.department) {
+                query.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            }
+            if (user.role === 'course_rep' && user.level) {
+                const rawLevel = user.level.trim().replace(/L$/i, '');
+                query.level = { $regex: new RegExp(rawLevel, 'i') };
+            }
+        }
 
         if (req.query.search) {
             query.$or = [

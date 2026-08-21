@@ -28,5 +28,6 @@ const AttendanceRecordSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 AttendanceRecordSchema.index({ session: 1, studentMatric: 1 }, { unique: true });
+AttendanceRecordSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('AttendanceRecord', AttendanceRecordSchema);
