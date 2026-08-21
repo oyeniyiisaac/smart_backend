@@ -331,10 +331,54 @@ const handleAdminCreateSession = async (req, res) => {
 
 const adminGetAllSession = async (req, res) => {
     try {
-        const sessions = await AdminCreateSession.find({});
-        return res.status(200).json({ data: sessions });
+        const user = req.user || req.admin;
+        const query = {};
+
+        if (user?.role === 'super_admin' && user.faculty) {
+            const fName = user.faculty.trim();
+            const facultyPattern = (fName.toUpperCase() === 'FCI' || /computing/i.test(fName))
+                ? '^(FCI|Faculty of Computing.*)$'
+                : (fName.toUpperCase() === 'FBAS' || /applied science/i.test(fName))
+                ? '^(FBAS|Faculty of Basic.*)$'
+                : (fName.toUpperCase() === 'FET' || /engineering/i.test(fName))
+                ? '^(FET|Faculty of Engineering.*)$'
+                : fName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            query.faculty = { $regex: new RegExp(facultyPattern, 'i') };
+        } else if (user?.role === 'admin' && user.department) {
+            query.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+        } else if (user?.role === 'course_rep') {
+            if (user.department) {
+                query.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            }
+            if (user.level) {
+                const userLevel = user.level.trim().replace(/L$/i, '');
+                query.level = { $regex: new RegExp(`^${userLevel}(L)?$`, 'i') };
+            }
+        }
+
+        const sessions = await AdminCreateSession.find(query).sort({ createdAt: -1 }).lean();
+
+        // Aggregate real attendance check-ins count per session
+        const sessionIds = sessions.map(s => s._id);
+        const attendanceCounts = await AttendanceRecord.aggregate([
+            { $match: { session: { $in: sessionIds }, status: 'Present' } },
+            { $group: { _id: '$session', presentCount: { $sum: 1 } } }
+        ]);
+
+        const countMap = {};
+        attendanceCounts.forEach(c => {
+            countMap[String(c._id)] = c.presentCount;
+        });
+
+        const enrichedSessions = sessions.map(s => ({
+            ...s,
+            presentCount: countMap[String(s._id)] || 0
+        }));
+
+        return res.status(200).json({ success: true, data: enrichedSessions, sessions: enrichedSessions });
     } catch (error) {
-        return res.status(500).json({ message: error.message });
+        console.error("❌ adminGetAllSession Error:", error);
+        return res.status(500).json({ success: false, message: error.message });
     }
 };
 
@@ -900,6 +944,7 @@ const getDashboardStats = async (req, res) => {
                 absentToday,
                 flaggedLowAttendance
             }
+        });
     } catch (error) {
         console.error("❌ Error fetching dashboard stats:", error);
         return res.status(500).json({ success: false, message: "Internal server error." });
@@ -913,9 +958,18 @@ const requestAdminPasswordReset = async (req, res) => {
             return res.status(400).json({ message: "Admin institution email is required." });
         }
 
-        const admin = await Admin.findOne({ email: email.trim().toLowerCase() });
+        const cleanEmail = email.trim();
+        const admin = await Admin.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
+
         if (!admin) {
-            return res.status(404).json({ message: "No admin account found with this email." });
+            // Intelligent cross-check: Check if this email is registered as a Student instead
+            const student = await Student.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
+            if (student) {
+                return res.status(404).json({
+                    message: "This email belongs to a Student account. Please switch to the 'Student Account' tab to reset your password."
+                });
+            }
+            return res.status(404).json({ message: "No Lecturer or Admin account found with this email address." });
         }
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -954,7 +1008,8 @@ const resetAdminPassword = async (req, res) => {
             return res.status(400).json({ message: "Password must be at least 6 characters." });
         }
 
-        const admin = await Admin.findOne({ email: email.trim().toLowerCase() });
+        const cleanEmail = email.trim();
+        const admin = await Admin.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
         if (!admin) {
             return res.status(404).json({ message: "Admin account not found." });
         }

@@ -17,7 +17,7 @@ const AttendanceRecordSchema = new mongoose.Schema({
     },
     verifiedVia: {
         type: String,
-        enum: ['GPS', 'Hardware', 'None'], // 'None' for absent
+        enum: ['GPS', 'Hardware', 'DynamicQR', 'QR', 'Manual', 'None'], // 'None' for absent
         default: 'None'
     },
     status: {

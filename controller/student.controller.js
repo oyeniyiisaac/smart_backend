@@ -1,4 +1,5 @@
 const StudentModel = require('../model/student.model');
+const AdminModel = require('../model/adminlog.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
 const PasswordReset = require('../model/passwordReset.model');
@@ -206,10 +207,18 @@ const verifyStudentLocation = async (req, res) => {
             }
         }
 
-        const activeSession = await AdminCreateSession.findOne({
-            courseCode: courseCode,
-            isSessionActive: true,
-        }).sort({ createdAt: -1 });
+        let activeSession;
+        if (sessionId) {
+            activeSession = await AdminCreateSession.findOne({
+                _id: sessionId,
+                isSessionActive: true
+            });
+        } else {
+            activeSession = await AdminCreateSession.findOne({
+                courseCode: courseCode,
+                isSessionActive: true,
+            }).sort({ createdAt: -1 });
+        }
 
         if (!activeSession) {
             return res.status(404).json({ message: "No active attendance session found for this course." });
@@ -764,15 +773,23 @@ const requestStudentPasswordReset = async (req, res) => {
             return res.status(400).json({ message: "Matric number or email is required." });
         }
 
+        const cleanIdentifier = identifier.trim();
         const student = await StudentModel.findOne({
             $or: [
-                { email: identifier.trim().toLowerCase() },
-                { matricno: identifier.trim() }
+                { email: { $regex: new RegExp(`^${cleanIdentifier}$`, 'i') } },
+                { matricno: cleanIdentifier }
             ]
         });
 
         if (!student) {
-            return res.status(404).json({ message: "No student account found with this credential." });
+            // Intelligent cross-check: Check if this email is registered as an Admin/Lecturer instead
+            const admin = await AdminModel.findOne({ email: { $regex: new RegExp(`^${cleanIdentifier}$`, 'i') } });
+            if (admin) {
+                return res.status(404).json({
+                    message: "This email belongs to a Lecturer/Admin account. Please switch to the 'Lecturer / Admin' tab to reset your password."
+                });
+            }
+            return res.status(404).json({ message: "No student account found with this email or matric number." });
         }
 
         // Generate 6-digit OTP
