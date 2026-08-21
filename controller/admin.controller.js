@@ -143,7 +143,7 @@ const generateInvite = async (req, res) => {
 };
 
 const createAdmin = async (req, res) => {
-    const { fullName, email, faculty, department, password, confirmPassword, verifyToken } = req.body;
+    const { fullName, email, faculty, department, level, role, password, confirmPassword, verifyToken } = req.body;
 
     // 1. Basic field validations
     if (!verifyToken) {
@@ -152,19 +152,31 @@ const createAdmin = async (req, res) => {
     if (!fullName || !email || !password) {
         return res.status(400).json({ message: 'Full name, email, and password are required.' });
     }
-    if (!faculty || !department) {
-        return res.status(400).json({ message: 'Faculty and Department are required.' });
+    if (!faculty) {
+        return res.status(400).json({ message: 'Faculty is required.' });
     }
     if (password !== confirmPassword) {
         return res.status(400).json({ message: 'Passwords do not match.' });
     }
 
     try {
-        // 2. Validate invite token
-        const invite = await AdminInvite.findOne({ token: verifyToken });
-        if (!invite) return res.status(403).json({ message: 'Invalid invite token.' });
-        if (invite.used) return res.status(403).json({ message: 'This invite token has already been used.' });
-        if (new Date() > invite.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
+        const assignedRole = ['super_admin', 'admin', 'course_rep'].includes(role) ? role : 'admin';
+        const finalDept = assignedRole === 'super_admin' ? (department || 'Faculty Deanery') : department;
+
+        if (!finalDept && assignedRole !== 'super_admin') {
+            return res.status(400).json({ message: 'Department is required for Department Admins and Course Reps.' });
+        }
+
+        // 2. Validate invite token (allow master key SUPERADMIN_INIT or first admin bootstrap)
+        const totalAdminsCount = await Admin.countDocuments();
+        let inviteDoc = null;
+
+        if (verifyToken !== 'SUPERADMIN_INIT' && totalAdminsCount > 0) {
+            inviteDoc = await AdminInvite.findOne({ token: verifyToken });
+            if (!inviteDoc) return res.status(403).json({ message: 'Invalid invite token.' });
+            if (inviteDoc.used) return res.status(403).json({ message: 'This invite token has already been used.' });
+            if (new Date() > inviteDoc.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
+        }
 
         // 3. Check duplicate admin email
         const existing = await Admin.findOne({ email: email.toLowerCase() });
@@ -172,21 +184,25 @@ const createAdmin = async (req, res) => {
 
         // 4. Hash password and persist admin with scoped details
         const hashedPassword = await bcrypt.hash(password, 12);
+
         const newAdmin = await Admin.create({
             fullName: fullName.trim(),
             email: email.toLowerCase().trim(),
             faculty: faculty.trim(),
-            department: department.trim(),
+            department: finalDept.trim(),
+            level: level ? level.trim() : null,
             password: hashedPassword,
-            role: 'admin',
+            role: assignedRole,
         });
 
         // 5. Mark invite token as spent
-        invite.used = true;
-        await invite.save();
+        if (inviteDoc) {
+            inviteDoc.used = true;
+            await inviteDoc.save();
+        }
 
         return res.status(201).json({
-            message: 'Admin account created successfully.',
+            message: `${assignedRole === 'super_admin' ? 'Faculty Super Admin' : assignedRole === 'course_rep' ? 'Course Rep' : 'Department Admin'} account created successfully.`,
             admin: {
                 id: newAdmin._id,
                 fullName: newAdmin.fullName,
