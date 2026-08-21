@@ -102,7 +102,8 @@ const loginAdmin = async (req, res) => {
                 email: admin.email,
                 role: admin.role,
                 faculty: admin.faculty,
-                department: admin.department
+                department: admin.department,
+                level: admin.level || null
             },
             process.env.JWT_SECRET,
             { expiresIn: '1d' }
@@ -111,7 +112,15 @@ const loginAdmin = async (req, res) => {
         return res.status(200).json({
             message: 'Login successful',
             token,
-            admin: { id: admin._id, email: admin.email, fullName: admin.fullName },
+            admin: {
+                id: admin._id,
+                email: admin.email,
+                fullName: admin.fullName,
+                role: admin.role,
+                faculty: admin.faculty,
+                department: admin.department,
+                level: admin.level || null
+            },
         });
     } catch (err) {
         console.error("❌ loginAdmin Error:", err);
@@ -167,23 +176,51 @@ const createAdmin = async (req, res) => {
             return res.status(400).json({ message: 'Department is required for Department Admins and Course Reps.' });
         }
 
-        // 2. Validate invite token (allow master key SUPERADMIN_INIT or first admin bootstrap)
-        const isMasterToken = verifyToken && verifyToken.trim().toUpperCase() === 'SUPERADMIN_INIT';
-        const totalAdminsCount = await Admin.countDocuments();
+        // 2. Enforce max 2 Super Admins per Faculty limit
+        if (assignedRole === 'super_admin') {
+            const facultyStr = faculty.trim();
+            const parenMatch = facultyStr.match(/\(([^)]+)\)/);
+            const acronym = parenMatch ? parenMatch[1].trim() : (facultyStr.length <= 6 ? facultyStr : null);
+
+            let facultyRegex;
+            if (acronym) {
+                facultyRegex = new RegExp(`(${facultyStr.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}|\\b${acronym.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b)`, 'i');
+            } else {
+                facultyRegex = new RegExp(facultyStr.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i');
+            }
+
+            const facultySuperAdminsCount = await Admin.countDocuments({
+                role: 'super_admin',
+                faculty: { $regex: facultyRegex }
+            });
+
+            if (facultySuperAdminsCount >= 2) {
+                return res.status(400).json({
+                    message: `Super Admin limit reached for ${faculty}. Each faculty can have a maximum of 2 Super Admins.`
+                });
+            }
+        }
+
+        // 3. Validate invite token
+        const masterKey = process.env.MASTER_SETUP_KEY || 'SUPERADMIN_INIT';
+        const isMasterToken = verifyToken && (verifyToken.trim().toUpperCase() === masterKey.toUpperCase());
+        const superAdminsCount = await Admin.countDocuments({ role: 'super_admin' });
         let inviteDoc = null;
 
-        if (!isMasterToken && totalAdminsCount > 0) {
+        // Master token is allowed for bootstrapping Super Admin accounts.
+        // For Department Admins & Course Reps (or once setup is complete), valid invite tokens are required.
+        if (!isMasterToken || (assignedRole !== 'super_admin' && superAdminsCount > 0)) {
             inviteDoc = await AdminInvite.findOne({ token: verifyToken.trim() });
-            if (!inviteDoc) return res.status(403).json({ message: 'Invalid invite token.' });
+            if (!inviteDoc) return res.status(403).json({ message: 'Invalid invite token. Please ask your Faculty Super Admin to generate an invite token.' });
             if (inviteDoc.used) return res.status(403).json({ message: 'This invite token has already been used.' });
             if (new Date() > inviteDoc.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
         }
 
-        // 3. Check duplicate admin email
+        // 4. Check duplicate admin email
         const existing = await Admin.findOne({ email: email.toLowerCase() });
         if (existing) return res.status(409).json({ message: 'An admin with that email already exists.' });
 
-        // 4. Hash password and persist admin with scoped details
+        // 5. Hash password and persist admin with scoped details
         const hashedPassword = await bcrypt.hash(password, 12);
 
         const newAdmin = await Admin.create({

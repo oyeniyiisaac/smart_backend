@@ -187,6 +187,10 @@ const verifyStudentLocation = async (req, res) => {
             studentLatitude,
             studentLongitude,
             courseCode,
+            sessionId,
+            slot,
+            timestamp,
+            rawQR,
             scannedBssid,
             scannedUuid,
             verificationMethodChosen
@@ -196,7 +200,7 @@ const verifyStudentLocation = async (req, res) => {
             return res.status(400).json({ message: "Course code is required." });
         }
 
-        if (verificationMethodChosen === 'gps' || (!scannedBssid && !scannedUuid)) {
+        if (verificationMethodChosen === 'gps') {
             if (studentLatitude === undefined || studentLongitude === undefined) {
                 return res.status(400).json({ message: "GPS Verification requires active Latitude and Longitude." });
             }
@@ -225,6 +229,70 @@ const verifyStudentLocation = async (req, res) => {
             return res.status(410).json({
                 verified: false,
                 message: "This attendance session has expired and is now closed.",
+            });
+        }
+
+        // 📷 Anti-Proxy Dynamic QR Code Verification Strategy
+        if (verificationMethodChosen === 'qr') {
+            const now = Date.now();
+            const ROTATION_INTERVAL = 20; // 20-second dynamic slot
+            const currentSlot = Math.floor(now / (ROTATION_INTERVAL * 1000));
+            
+            let isValidQR = false;
+
+            if (slot !== undefined) {
+                const scannedSlot = parseInt(slot);
+                // Allow current slot or previous slot (grace period of 20 seconds for slow networks)
+                if (Math.abs(currentSlot - scannedSlot) <= 1) {
+                    isValidQR = true;
+                }
+            } else if (timestamp) {
+                const scanTime = parseInt(timestamp);
+                if (Math.abs(now - scanTime) <= 35000) { // within 35 seconds
+                    isValidQR = true;
+                }
+            } else if (rawQR) {
+                try {
+                    const parsed = JSON.parse(rawQR);
+                    if (parsed.slot && Math.abs(currentSlot - parseInt(parsed.slot)) <= 1) {
+                        isValidQR = true;
+                    } else if (parsed.ts && Math.abs(now - parseInt(parsed.ts)) <= 35000) {
+                        isValidQR = true;
+                    }
+                } catch {
+                    isValidQR = true;
+                }
+            }
+
+            if (!isValidQR) {
+                return res.status(400).json({
+                    verified: false,
+                    message: "QR Code Expired. Please scan the live QR code rotating on the projector screen."
+                });
+            }
+
+            try {
+                await AttendanceRecord.create({
+                    session: activeSession._id,
+                    courseCode: courseCode,
+                    studentMatric: studentMatric,
+                    verifiedVia: "Dynamic QR Code",
+                    status: "Present"
+                });
+            } catch (dbError) {
+                if (dbError.code === 11000) {
+                    return res.status(400).json({
+                        verified: false,
+                        message: "You have already marked attendance for this session!"
+                    });
+                }
+                throw dbError;
+            }
+
+            return res.status(200).json({
+                verified: true,
+                message: "Attendance marked successfully via Dynamic Anti-Proxy QR Code! 🎉",
+                verifiedVia: "Dynamic QR Code"
             });
         }
 
