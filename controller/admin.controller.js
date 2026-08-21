@@ -168,11 +168,12 @@ const createAdmin = async (req, res) => {
         }
 
         // 2. Validate invite token (allow master key SUPERADMIN_INIT or first admin bootstrap)
+        const isMasterToken = verifyToken && verifyToken.trim().toUpperCase() === 'SUPERADMIN_INIT';
         const totalAdminsCount = await Admin.countDocuments();
         let inviteDoc = null;
 
-        if (verifyToken !== 'SUPERADMIN_INIT' && totalAdminsCount > 0) {
-            inviteDoc = await AdminInvite.findOne({ token: verifyToken });
+        if (!isMasterToken && totalAdminsCount > 0) {
+            inviteDoc = await AdminInvite.findOne({ token: verifyToken.trim() });
             if (!inviteDoc) return res.status(403).json({ message: 'Invalid invite token.' });
             if (inviteDoc.used) return res.status(403).json({ message: 'This invite token has already been used.' });
             if (new Date() > inviteDoc.expiresAt) return res.status(403).json({ message: 'This invite token has expired.' });
