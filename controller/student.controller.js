@@ -1,6 +1,7 @@
 const StudentModel = require('../model/student.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
+const PasswordReset = require('../model/passwordReset.model');
 const bcrypt = require('bcryptjs');
 const { Resend } = require('resend');
 const jwt = require('jsonwebtoken');
@@ -15,7 +16,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // ----------------------------------------------------
 const register = async (req, res) => {
     try {
-        const { firstname, lastname, email, matricno, faculty, department, password, confirmpassword } = req.body;
+        const { firstname, lastname, email, matricno, faculty, department, level, password, confirmpassword } = req.body;
 
         if (password !== confirmpassword) {
             return res.status(400).json({ message: "Passwords do not match." });
@@ -31,10 +32,6 @@ const register = async (req, res) => {
             return res.status(400).json({ message: "Email already exists." });
         }
 
-        // // Hash password before saving
-        // const salt = await bcrypt.genSalt(10);
-        // const hashedPassword = await bcrypt.hash(password, salt);
-
         const newStudent = new StudentModel({
             firstname,
             lastname,
@@ -42,6 +39,7 @@ const register = async (req, res) => {
             matricno,
             faculty,
             department,
+            level: level || '100L',
             password,
             confirmpassword,
         });
@@ -62,7 +60,7 @@ const register = async (req, res) => {
 
         return res.status(201).json({
             message: 'Registration successful',
-            data: { id: result._id, email: result.email, matricno: result.matricno }
+            data: { id: result._id, email: result.email, matricno: result.matricno, level: result.level }
         });
 
     } catch (error) {
@@ -100,6 +98,7 @@ const login = async (req, res) => {
             matricno: student.matricno,
             faculty: student.faculty,
             department: student.department,
+            level: student.level || '100L',
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -142,6 +141,7 @@ const dashboard = async (req, res) => {
                 matricno: user.matricno,
                 department: user.department || null,
                 faculty: user.faculty || null,
+                level: user.level || '100L',
                 profilePicture: user.profilePicture || null,
             },
         });
@@ -433,16 +433,36 @@ const getActiveSessionsForStudent = async (req, res) => {
             });
         }
 
-        const studentLevel = rawLevel ? rawLevel.trim().replace(/L$/i, '') : '';
-        const levelFilter = studentLevel ? { level: { $regex: new RegExp(studentLevel, 'i') } } : {};
+        // 1. Level Filter: Extract numeric part e.g. "100L" -> "100"
+        const studentLevelNum = rawLevel ? rawLevel.trim().replace(/L$/i, '') : '100';
+        const levelQuery = {
+            level: { $regex: new RegExp(`^${studentLevelNum}(L)?$`, 'i') }
+        };
 
-        const now = new Date();
+        // 2. Department Filter: Exact match for student department
+        const deptQuery = {
+            department: { $regex: new RegExp(`^${studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') }
+        };
+
+        // 3. Faculty Filter: Acronym & Full Name
+        const fName = studentFaculty.trim();
+        const facultyPattern = (fName.toUpperCase() === 'FCI' || /computing/i.test(fName))
+            ? '^(FCI|Faculty of Computing.*)$'
+            : (fName.toUpperCase() === 'FBAS' || /applied science/i.test(fName))
+            ? '^(FBAS|Faculty of Basic.*)$'
+            : (fName.toUpperCase() === 'FET' || /engineering/i.test(fName))
+            ? '^(FET|Faculty of Engineering.*)$'
+            : fName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+        const facultyQuery = {
+            faculty: { $regex: new RegExp(facultyPattern, 'i') }
+        };
+
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
-            dateTimeTo: { $gt: now },
-            faculty: { $regex: new RegExp(studentFaculty.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') },
-            department: { $regex: new RegExp(studentDepartment.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'i') },
-            ...levelFilter
+            ...facultyQuery,
+            ...deptQuery,
+            ...levelQuery
         }).sort({ createdAt: -1 });
 
         return res.status(200).json({
@@ -737,6 +757,100 @@ const uploadProfilePicture = async (req, res) => {
 
 
 
+const requestStudentPasswordReset = async (req, res) => {
+    try {
+        const { identifier } = req.body; // matricno or email
+        if (!identifier) {
+            return res.status(400).json({ message: "Matric number or email is required." });
+        }
+
+        const student = await StudentModel.findOne({
+            $or: [
+                { email: identifier.trim().toLowerCase() },
+                { matricno: identifier.trim() }
+            ]
+        });
+
+        if (!student) {
+            return res.status(404).json({ message: "No student account found with this credential." });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+        await PasswordReset.deleteMany({ identifier: student.email.toLowerCase() });
+        await PasswordReset.create({
+            identifier: student.email.toLowerCase(),
+            userType: 'student',
+            otp,
+            expiresAt
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: `Password reset OTP generated. Valid for 15 minutes.`,
+            otp: otp, // In dev/demo environment returned directly for instant recovery
+            email: student.email
+        });
+    } catch (err) {
+        console.error("Password reset request error:", err);
+        return res.status(500).json({ message: "Server error processing request." });
+    }
+};
+
+const resetStudentPassword = async (req, res) => {
+    try {
+        const { identifier, otp, newPassword, confirmPassword } = req.body;
+        if (!identifier || !otp || !newPassword) {
+            return res.status(400).json({ message: "All fields are required." });
+        }
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: "Passwords do not match." });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters." });
+        }
+
+        const student = await StudentModel.findOne({
+            $or: [
+                { email: identifier.trim().toLowerCase() },
+                { matricno: identifier.trim() }
+            ]
+        });
+
+        if (!student) {
+            return res.status(404).json({ message: "Student record not found." });
+        }
+
+        const resetDoc = await PasswordReset.findOne({
+            identifier: student.email.toLowerCase(),
+            otp: otp.trim(),
+            used: false,
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!resetDoc) {
+            return res.status(400).json({ message: "Invalid or expired OTP code. Please request a new code." });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+        student.password = hashedPassword;
+        await student.save();
+
+        resetDoc.used = true;
+        await resetDoc.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset successfully! You can now sign in with your new password."
+        });
+    } catch (err) {
+        console.error("Reset password error:", err);
+        return res.status(500).json({ message: "Server error resetting password." });
+    }
+};
+
 module.exports = {
     register,
     signin,
@@ -749,5 +863,7 @@ module.exports = {
     submitCourseRegistration,
     getStudentRegistrations,
     getMyCourses,
-    uploadProfilePicture
+    uploadProfilePicture,
+    requestStudentPasswordReset,
+    resetStudentPassword
 };

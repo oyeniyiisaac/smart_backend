@@ -9,6 +9,7 @@ const studentSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true, trim: true, lowercase: true },
     faculty: { type: String, required: true, trim: true },
     department: { type: String, required: true, trim: true },
+    level: { type: String, default: '100L', trim: true },
     matricno: {
         type: String,
         required: true,

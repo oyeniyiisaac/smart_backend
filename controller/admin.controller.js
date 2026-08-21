@@ -5,6 +5,7 @@ const Admin = require('../model/adminlog.model');
 const AdminInvite = require('../model/adminInvite.model');
 const AdminCreateSession = require('../model/adminCreateSession.model');
 const AttendanceRecord = require('../model/attendanceRecord.model');
+const PasswordReset = require('../model/passwordReset.model');
 const Course = require('../model/course.model');
 const Student = require('../model/student.model');
 const { markAbsentees } = require('./student.controller');
@@ -347,13 +348,19 @@ const getSingleSession = async (req, res) => {
             return res.status(404).json({ success: false, message: "Session not found." });
         }
 
-        // Strict Role-Based Data Isolation Check
-        if (user?.role === 'super_admin' && user.faculty) {
-            if (session.faculty && session.faculty.toLowerCase() !== user.faculty.toLowerCase()) {
-                return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Faculty." });
+        // Role-Based Access Scoping
+        if (user?.role === 'super_admin' && user.faculty && session.faculty) {
+            const uFac = user.faculty.trim().toLowerCase();
+            const sFac = session.faculty.trim().toLowerCase();
+            const uIsFci = uFac === 'fci' || uFac.includes('computing');
+            const sIsFci = sFac === 'fci' || sFac.includes('computing');
+            if (!uIsFci || !sIsFci) {
+                if (uFac !== sFac && !uFac.includes(sFac) && !sFac.includes(uFac)) {
+                    return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Faculty." });
+                }
             }
         } else if (user?.role === 'admin' || user?.role === 'course_rep') {
-            if (user.department && session.department && session.department.toLowerCase() !== user.department.toLowerCase()) {
+            if (user.department && session.department && session.department.trim().toLowerCase() !== user.department.trim().toLowerCase()) {
                 return res.status(403).json({ success: false, message: "Unauthorized: Session belongs to a different Department." });
             }
             if (user.role === 'course_rep' && user.level && session.level) {
@@ -572,6 +579,7 @@ const getCourseAttendanceReport = async (req, res) => {
         ]);
 
         // 4. Format results for frontend UI
+        const threshold = parseInt(req.query.threshold) || 75;
         const studentReports = attendanceData.map(record => {
             const attended = record.attended || 0;
             const percentage = totalClasses > 0 
@@ -589,13 +597,16 @@ const getCourseAttendanceReport = async (req, res) => {
                 totalClasses: totalClasses,
                 attended: attended,
                 percentage: Number(percentage),
-                isEligible: Number(percentage) >= 70
+                isEligible: Number(percentage) >= threshold
             };
         });
 
         return res.status(200).json({
             success: true,
             totalClasses,
+            threshold,
+            faculty: user.faculty || null,
+            department: user.department || null,
             students: studentReports
         });
 
@@ -619,7 +630,15 @@ const getStudents = async (req, res) => {
         const roleScope = {};
         if (user?.role === 'super_admin') {
             if (user.faculty) {
-                roleScope.faculty = { $regex: new RegExp(`^${user.faculty.trim()}$`, 'i') };
+                const fName = user.faculty.trim();
+                const facultyPattern = (fName.toUpperCase() === 'FCI' || /computing/i.test(fName))
+                    ? '^(FCI|Faculty of Computing.*)$'
+                    : (fName.toUpperCase() === 'FBAS' || /applied science/i.test(fName))
+                    ? '^(FBAS|Faculty of Basic.*)$'
+                    : (fName.toUpperCase() === 'FET' || /engineering/i.test(fName))
+                    ? '^(FET|Faculty of Engineering.*)$'
+                    : fName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                roleScope.faculty = { $regex: new RegExp(facultyPattern, 'i') };
             }
         } else if (user?.role === 'admin') {
             if (user.department) {
@@ -881,10 +900,90 @@ const getDashboardStats = async (req, res) => {
                 absentToday,
                 flaggedLowAttendance
             }
-        });
     } catch (error) {
         console.error("❌ Error fetching dashboard stats:", error);
         return res.status(500).json({ success: false, message: "Internal server error." });
+    }
+};
+
+const requestAdminPasswordReset = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ message: "Admin institution email is required." });
+        }
+
+        const admin = await Admin.findOne({ email: email.trim().toLowerCase() });
+        if (!admin) {
+            return res.status(404).json({ message: "No admin account found with this email." });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+        await PasswordReset.deleteMany({ identifier: admin.email.toLowerCase() });
+        await PasswordReset.create({
+            identifier: admin.email.toLowerCase(),
+            userType: 'admin',
+            otp,
+            expiresAt
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset OTP generated. Valid for 15 minutes.",
+            otp,
+            email: admin.email
+        });
+    } catch (err) {
+        console.error("Admin password reset request error:", err);
+        return res.status(500).json({ message: "Server error processing request." });
+    }
+};
+
+const resetAdminPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword, confirmPassword } = req.body;
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ message: "All fields are required." });
+        }
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({ message: "Passwords do not match." });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters." });
+        }
+
+        const admin = await Admin.findOne({ email: email.trim().toLowerCase() });
+        if (!admin) {
+            return res.status(404).json({ message: "Admin account not found." });
+        }
+
+        const resetDoc = await PasswordReset.findOne({
+            identifier: admin.email.toLowerCase(),
+            otp: otp.trim(),
+            used: false,
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!resetDoc) {
+            return res.status(400).json({ message: "Invalid or expired OTP code." });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+        admin.password = hashedPassword;
+        await admin.save();
+
+        resetDoc.used = true;
+        await resetDoc.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Admin password reset successfully! You can now log in."
+        });
+    } catch (err) {
+        console.error("Reset admin password error:", err);
+        return res.status(500).json({ message: "Server error resetting password." });
     }
 };
 
@@ -908,5 +1007,7 @@ module.exports = {
     createCourse,
     getCourses,
     deleteCourse,
-    getDashboardStats
+    getDashboardStats,
+    requestAdminPasswordReset,
+    resetAdminPassword
 };

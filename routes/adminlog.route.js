@@ -19,7 +19,9 @@ const {
     createCourse,
     getCourses,
     deleteCourse,
-    getDashboardStats
+    getDashboardStats,
+    requestAdminPasswordReset,
+    resetAdminPassword
 } = require("../controller/admin.controller");
 
 const router = express.Router();
@@ -27,6 +29,8 @@ const router = express.Router();
 // Public Routes
 router.post("/login", loginAdmin);
 router.post("/create", createAdmin); // Registration via invite token
+router.post("/forgot-password", requestAdminPasswordReset);
+router.post("/reset-password", resetAdminPassword);
 
 // ─────────────────────────────────────────────
 // Protected Admin Routes (Requires valid Admin login)
