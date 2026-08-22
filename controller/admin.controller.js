@@ -252,6 +252,81 @@ const createAdmin = async (req, res) => {
             await inviteDoc.save();
         }
 
+        // Send professional welcome email to Admin/Lecturer asynchronously
+        try {
+            const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+            const adminLoginLink = `${clientOrigin}/admin/login`;
+            const roleLabel = assignedRole === 'super_admin' ? 'Faculty Super Admin' : assignedRole === 'course_rep' ? 'Course Representative' : 'Lecturer / Department Admin';
+
+            await resend.emails.send({
+                from: "onboarding@resend.dev",
+                to: cleanEmail,
+                subject: `🏛️ Smart Attendance Portal - ${roleLabel} Account Created`,
+                html: `
+                    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8faf9; padding: 20px; border-radius: 12px;">
+                        <!-- Header -->
+                        <div style="background-color: #0a643a; padding: 28px 24px; text-align: center; border-radius: 10px 10px 0 0;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">🏛️ Smart Attendance Portal</h1>
+                            <p style="color: #baeed9; margin: 6px 0 0 0; font-size: 13px; font-weight: 500;">Staff & Lecturer Administrative Access</p>
+                        </div>
+
+                        <!-- Main Body -->
+                        <div style="background-color: #ffffff; padding: 28px 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+                            <h2 style="color: #1a1c1a; margin: 0 0 12px 0; font-size: 18px;">Welcome, ${fullName}! 👋</h2>
+                            <p style="color: #4a5568; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+                                Your administrative account has been established on the university Smart Attendance Portal with <strong>${roleLabel}</strong> privileges. You can now create dynamic attendance sessions, monitor live rosters, and export official exam clearance reports.
+                            </p>
+
+                            <!-- Role Credentials Box -->
+                            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                                <h3 style="color: #166534; margin: 0 0 12px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">📋 Account Profile Summary</h3>
+                                <table style="width: 100%; font-size: 13px; color: #374151; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; width: 40%; color: #4b5563;">Assigned Role:</td>
+                                        <td style="padding: 6px 0; color: #0a643a; font-weight: 700;">${roleLabel}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Staff Email:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${cleanEmail}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Faculty:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${faculty.trim()}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Department:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${finalDept.trim()}</td>
+                                    </tr>
+                                    ${level ? `
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Class Level:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${level.trim()}</td>
+                                    </tr>` : ''}
+                                </table>
+                            </div>
+
+                            <!-- CTA Button -->
+                            <div style="text-align: center; margin: 28px 0 20px 0;">
+                                <a href="${adminLoginLink}" style="background-color: #0a643a; color: #ffffff; padding: 13px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(10, 100, 58, 0.2);">
+                                    Access Admin Command Center →
+                                </a>
+                            </div>
+
+                            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+
+                            <!-- Security / Footer -->
+                            <p style="color: #718096; font-size: 11px; text-align: center; line-height: 1.5; margin: 0;">
+                                For security reasons, please do not share your administrative credentials.<br/>
+                                © ${new Date().getFullYear()} University Smart Attendance System. All rights reserved.
+                            </p>
+                        </div>
+                    </div>
+                `
+            });
+        } catch (emailErr) {
+            console.error("⚠️ Resend Admin Welcome Email Error:", emailErr.message);
+        }
+
         return res.status(201).json({
             message: `${assignedRole === 'super_admin' ? 'Faculty Super Admin' : assignedRole === 'course_rep' ? 'Course Rep' : 'Department Admin'} account created successfully.`,
             admin: {

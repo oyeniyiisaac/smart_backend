@@ -57,16 +57,87 @@ const register = async (req, res) => {
 
         const result = await newStudent.save();
 
-        // Send confirmation email asynchronously (do not block response on failure)
+        // Send professional welcome confirmation email asynchronously
         try {
+            const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+            const loginLink = `${clientOrigin}/signin`;
+
             await resend.emails.send({
                 from: "onboarding@resend.dev",
-                to: email,
-                subject: "Welcome to Attendance System",
-                html: `<p>Congrats ${firstname} on signing up!</p>`
+                to: cleanEmail,
+                subject: "🎓 Welcome to Smart Attendance System - Student Account Created",
+                html: `
+                    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f8faf9; padding: 20px; border-radius: 12px;">
+                        <!-- Header -->
+                        <div style="background-color: #0a643a; padding: 28px 24px; text-align: center; border-radius: 10px 10px 0 0;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">🎓 Smart Attendance System</h1>
+                            <p style="color: #baeed9; margin: 6px 0 0 0; font-size: 13px; font-weight: 500;">Official University Student Portal</p>
+                        </div>
+
+                        <!-- Main Content -->
+                        <div style="background-color: #ffffff; padding: 28px 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+                            <h2 style="color: #1a1c1a; margin: 0 0 12px 0; font-size: 18px;">Welcome, ${firstname} ${lastname || ''}! 👋</h2>
+                            <p style="color: #4a5568; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+                                Your student account has been successfully created and registered on the university Smart Attendance Portal. You can now track your lecture attendance in real time, monitor exam clearance eligibility, and register for departmental courses.
+                            </p>
+
+                            <!-- Academic Profile Details Box -->
+                            <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                                <h3 style="color: #166534; margin: 0 0 12px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;">📋 Your Student Credentials</h3>
+                                <table style="width: 100%; font-size: 13px; color: #374151; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; width: 40%; color: #4b5563;">Matric Number:</td>
+                                        <td style="padding: 6px 0; color: #0a643a; font-weight: 700;">${matricno.trim()}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Registered Email:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${cleanEmail}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Faculty:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${faculty || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Department:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${department || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0; font-weight: 600; color: #4b5563;">Academic Level:</td>
+                                        <td style="padding: 6px 0; color: #1f2937; font-weight: 500;">${level || '100L'}</td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            <!-- Next Steps -->
+                            <div style="margin-bottom: 24px;">
+                                <h4 style="color: #1a1c1a; margin: 0 0 10px 0; font-size: 14px; font-weight: 600;">Next Steps to Get Started:</h4>
+                                <ul style="color: #4a5568; font-size: 13px; line-height: 1.8; margin: 0; padding-left: 20px;">
+                                    <li><strong>Log in</strong> to your student dashboard using your matric number or email.</li>
+                                    <li><strong>Register your courses</strong> for the current semester to appear on lecturer attendance rosters.</li>
+                                    <li><strong>Scan dynamic QR codes</strong> with GPS verification in class to mark yourself present.</li>
+                                </ul>
+                            </div>
+
+                            <!-- CTA Button -->
+                            <div style="text-align: center; margin: 28px 0 20px 0;">
+                                <a href="${loginLink}" style="background-color: #0a643a; color: #ffffff; padding: 13px 32px; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 14px; display: inline-block; box-shadow: 0 2px 4px rgba(10, 100, 58, 0.2);">
+                                    Sign In to Student Portal →
+                                </a>
+                            </div>
+
+                            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+
+                            <!-- Security / Footer -->
+                            <p style="color: #718096; font-size: 11px; text-align: center; line-height: 1.5; margin: 0;">
+                                If you did not create this account, please immediately contact your department administrator or the ICT Helpdesk.<br/>
+                                © ${new Date().getFullYear()} University Smart Attendance System. All rights reserved.
+                            </p>
+                        </div>
+                    </div>
+                `
             });
         } catch (emailErr) {
-            console.error("⚠️ Resend Email Error:", emailErr.message);
+            console.error("⚠️ Resend Welcome Email Error:", emailErr.message);
         }
 
         return res.status(201).json({
