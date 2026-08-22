@@ -23,21 +23,31 @@ const register = async (req, res) => {
             return res.status(400).json({ message: "Passwords do not match." });
         }
 
-        const existingMatric = await StudentModel.findOne({ matricno });
+        const cleanEmail = email.trim().toLowerCase();
+
+        const existingMatric = await StudentModel.findOne({ matricno: matricno.trim() });
         if (existingMatric) {
             return res.status(400).json({ message: "Matric number already exists." });
         }
 
-        const existingEmail = await StudentModel.findOne({ email });
+        const existingEmail = await StudentModel.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
         if (existingEmail) {
-            return res.status(400).json({ message: "Email already exists." });
+            return res.status(400).json({ message: "An account with this email already exists as a student." });
+        }
+
+        // Cross-check: Prevent using an Admin/Lecturer email for a Student account
+        const existingAdmin = await AdminModel.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
+        if (existingAdmin) {
+            return res.status(400).json({
+                message: "This email is already registered as a Lecturer/Admin account. An email address cannot be shared between Student and Admin accounts."
+            });
         }
 
         const newStudent = new StudentModel({
             firstname,
             lastname,
-            email,
-            matricno,
+            email: cleanEmail,
+            matricno: matricno.trim(),
             faculty,
             department,
             level: level || '100L',

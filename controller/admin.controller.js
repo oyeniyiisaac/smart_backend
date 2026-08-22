@@ -221,15 +221,24 @@ const createAdmin = async (req, res) => {
         }
 
         // 4. Check duplicate admin email
-        const existing = await Admin.findOne({ email: email.toLowerCase() });
-        if (existing) return res.status(409).json({ message: 'An admin with that email already exists.' });
+        const cleanEmail = email.trim().toLowerCase();
+        const existing = await Admin.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
+        if (existing) return res.status(409).json({ message: 'An admin account with that email already exists.' });
+
+        // 4b. Cross-check: Prevent using a Student email for an Admin account
+        const existingStudent = await Student.findOne({ email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') } });
+        if (existingStudent) {
+            return res.status(409).json({
+                message: 'This email is already registered as a Student account. An email address cannot be shared between Student and Admin accounts.'
+            });
+        }
 
         // 5. Hash password and persist admin with scoped details
         const hashedPassword = await bcrypt.hash(password, 12);
 
         const newAdmin = await Admin.create({
             fullName: fullName.trim(),
-            email: email.toLowerCase().trim(),
+            email: cleanEmail,
             faculty: faculty.trim(),
             department: finalDept.trim(),
             level: level ? level.trim() : null,
