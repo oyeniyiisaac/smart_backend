@@ -7,6 +7,9 @@ const studentSchema = new mongoose.Schema({
     firstname: { type: String, required: true, trim: true },
     lastname: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    faculty: { type: String, required: true, trim: true },
+    department: { type: String, required: true, trim: true },
+    level: { type: String, default: '100L', trim: true },
     matricno: {
         type: String,
         required: true,
@@ -18,30 +21,20 @@ const studentSchema = new mongoose.Schema({
         }
     },
     password: { type: String, required: true },
-    confirmpassword: { type: String, required: true }
+    profilePicture: { type: String, default: '' },
 }, {
-    timestamps: {
-        currentTime: () => new Date(Date.now() + 60 * 60 * 1000)
-    }
-})
+    timestamps: true
+});
 
 studentSchema.pre('save', async function () {
     try {
-        const salt = 10
-        const rawPassword = this.password
-        console.log(rawPassword)
-        const hashedPassword = await bcrypt.hash(this.password, salt)
-        const hashedconfirmPassword = await bcrypt.hash(this.confirmpassword, salt)
-        this.password = hashedPassword
-        this.confirmpassword = hashedconfirmPassword
-        console.log(hashedconfirmPassword)
-        console.log(hashedPassword)
-
+        if (!this.isModified('password')) return;
+        const salt = 10;
+        this.password = await bcrypt.hash(this.password, salt);
+    } catch (err) {
+        console.error("Error hashing password:", err);
     }
-    catch (err) {
-        console.log(err)
-    }
-})
+});
 
 
 const StudentModel = mongoose.model('Student', studentSchema)
