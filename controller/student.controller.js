@@ -59,7 +59,7 @@ const register = async (req, res) => {
 
         // Send professional welcome confirmation email asynchronously
         try {
-            const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+            const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-two-orpin.vercel.app';
             const loginLink = `${clientOrigin}/signin`;
 
             await resend.emails.send({
@@ -215,6 +215,27 @@ const dashboard = async (req, res) => {
             return res.status(404).json({ message: "User not found." });
         }
 
+        const cleanMatric = user.matricno.trim();
+
+        // 1. Calculate dynamic statistics from AttendanceRecord database
+        const attendedCount = await AttendanceRecord.countDocuments({
+            studentMatric: cleanMatric,
+            status: 'Present'
+        });
+
+        const totalRecords = await AttendanceRecord.countDocuments({
+            studentMatric: cleanMatric
+        });
+
+        const absentCount = totalRecords - attendedCount;
+
+        // Calculate overall percentage
+        const overallPercentage = totalRecords > 0 
+            ? Math.round((attendedCount / totalRecords) * 100) 
+            : 0;
+
+        const isEligible = totalRecords === 0 || overallPercentage >= 75;
+
         return res.status(200).json({
             message: "Dashboard",
             result: {
@@ -225,6 +246,14 @@ const dashboard = async (req, res) => {
                 faculty: user.faculty || null,
                 level: user.level || '100L',
                 profilePicture: user.profilePicture || null,
+                stats: {
+                    overallPercentage,
+                    classesAttended: attendedCount,
+                    totalClasses: totalRecords,
+                    absentCount,
+                    isEligible,
+                    eligibilityStatus: isEligible ? 'Eligible' : 'Not Eligible'
+                }
             },
         });
 
