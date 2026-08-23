@@ -9,6 +9,7 @@ const AttendanceRecord = require('../model/attendanceRecord.model');
 const PasswordReset = require('../model/passwordReset.model');
 const Course = require('../model/course.model');
 const Student = require('../model/student.model');
+const CourseRegistration = require('../model/submitCourseReg.model');
 const { markAbsentees } = require('./student.controller');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -807,6 +808,46 @@ const getStudents = async (req, res) => {
             .limit(limit)
             .lean();
 
+        // 1. Fetch real course registrations for these students
+        const studentIds = studentsData.map(s => s._id);
+        const studentMatrics = studentsData.map(s => s.matricno).filter(Boolean);
+
+        const registrations = await CourseRegistration.find({
+            $or: [
+                { studentId: { $in: studentIds } },
+                { matricno: { $in: studentMatrics } }
+            ]
+        }).lean();
+
+        const regMap = {};
+        registrations.forEach(reg => {
+            const keyById = String(reg.studentId);
+            const keyByMatric = reg.matricno ? String(reg.matricno).trim() : null;
+            const coursesCount = Array.isArray(reg.courses) ? reg.courses.length : 0;
+            
+            if (keyById) regMap[keyById] = Math.max(regMap[keyById] || 0, coursesCount);
+            if (keyByMatric) regMap[keyByMatric] = Math.max(regMap[keyByMatric] || 0, coursesCount);
+        });
+
+        // 2. Fetch attendance stats to determine eligibility accurately
+        const attendanceStats = await AttendanceRecord.aggregate([
+            { $match: { studentMatric: { $in: studentMatrics } } },
+            {
+                $group: {
+                    _id: '$studentMatric',
+                    totalSessions: { $sum: 1 },
+                    presentCount: {
+                        $sum: { $cond: [{ $eq: ['$status', 'Present'] }, 1, 0] }
+                    }
+                }
+            }
+        ]);
+
+        const attendanceMap = {};
+        attendanceStats.forEach(stat => {
+            attendanceMap[String(stat._id)] = stat;
+        });
+
         // Format data for frontend dashboard
         const formattedStudents = studentsData.map(student => {
             const firstName = student.firstname || '';
@@ -816,15 +857,32 @@ const getStudents = async (req, res) => {
             // Extract Initials for Avatar Badge (e.g., Alex Rivers -> AR)
             const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || 'ST';
 
+            const numEnrolled = regMap[String(student._id)] ?? regMap[String(student.matricno)] ?? 0;
+            const enrolledText = numEnrolled === 0 
+                ? '0 Courses' 
+                : numEnrolled === 1 
+                ? '1 Course' 
+                : `${numEnrolled} Courses`;
+
+            // Dynamic Eligibility based on registration & attendance rate (75% threshold)
+            const att = attendanceMap[String(student.matricno)];
+            let status = 'Eligible';
+            if (numEnrolled === 0) {
+                status = 'Not Enrolled';
+            } else if (att && att.totalSessions > 0) {
+                const percentage = (att.presentCount / att.totalSessions) * 100;
+                status = percentage >= 75 ? 'Eligible' : 'Ineligible';
+            }
+
             return {
                 id: student._id,
                 name: fullName,
                 initials,
                 matricNumber: student.matricno || 'N/A',
-                department: student.department || 'Computer Science',
+                department: student.department || 'General',
                 level: student.level || '100L',
-                enrolledCourses: student.enrolledCourses ? `${student.enrolledCourses.length} Courses` : '5 Courses',
-                status: student.status || 'Eligible' 
+                enrolledCourses: enrolledText,
+                status: status 
             };
         });
 
@@ -832,7 +890,7 @@ const getStudents = async (req, res) => {
             success: true,
             totalStudents,
             totalPages,
-            currentPage: page,
+            currentPage: Number(page),
             students: formattedStudents
         });
 
