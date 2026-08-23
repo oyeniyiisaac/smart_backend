@@ -341,6 +341,28 @@ const verifyStudentLocation = async (req, res) => {
             return res.status(404).json({ message: "No active attendance session found for this course." });
         }
 
+        // 🔒 Guard: Verify Student has Registered for this Course
+        const targetCourseCode = courseCode || activeSession.courseCode;
+        const studentObjId = authUser?.id || authUser?._id;
+        
+        const courseReg = await CourseRegistration.findOne({
+            $or: [
+                ...(studentObjId ? [{ studentId: studentObjId }] : []),
+                { matricno: studentMatric }
+            ],
+            status: { $ne: 'Rejected' },
+            'courses.courseCode': { $regex: new RegExp(`^${targetCourseCode.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') }
+        });
+
+        if (!courseReg) {
+            return res.status(403).json({
+                verified: false,
+                requiresCourseRegistration: true,
+                message: `You cannot mark attendance for ${targetCourseCode} because you have not registered for this course yet. Please register your courses first.`,
+                redirectTo: '/student/register-course'
+            });
+        }
+
         // ⏱️ Session Timeout Validation
         const sessionDurationLimit = 60 * 60 * 1000; // 1 Hour limit
         const currentTime = new Date();
@@ -620,8 +642,45 @@ const getActiveSessionsForStudent = async (req, res) => {
             faculty: { $regex: new RegExp(facultyPattern, 'i') }
         };
 
+        // 🔒 Course Registration Filter: Only fetch sessions for courses the student registered
+        const studentRegistrations = await CourseRegistration.find({
+            $or: [
+                { studentId: student._id },
+                { matricno: student.matricno }
+            ],
+            status: { $ne: 'Rejected' }
+        }).lean();
+
+        const registeredCourseCodes = new Set();
+        studentRegistrations.forEach(reg => {
+            if (Array.isArray(reg.courses)) {
+                reg.courses.forEach(c => {
+                    if (c.courseCode) {
+                        registeredCourseCodes.add(c.courseCode.trim().toUpperCase());
+                    }
+                });
+            }
+        });
+
+        // If student has NOT registered any courses, return 0 sessions with registeredCoursesCount = 0
+        if (registeredCourseCodes.size === 0) {
+            return res.status(200).json({
+                success: true,
+                hasRegisteredCourses: false,
+                registeredCoursesCount: 0,
+                sessions: [],
+                message: "You have not registered for any courses yet. Please register your courses to view and join active class sessions."
+            });
+        }
+
+        const courseCodesArray = Array.from(registeredCourseCodes);
+        const courseCodeRegexes = courseCodesArray.map(
+            c => new RegExp(`^${c.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i')
+        );
+
         const activeSessions = await AdminCreateSession.find({
             isSessionActive: true,
+            courseCode: { $in: courseCodeRegexes },
             ...facultyQuery,
             ...deptQuery,
             ...levelQuery
@@ -629,6 +688,8 @@ const getActiveSessionsForStudent = async (req, res) => {
 
         return res.status(200).json({
             success: true,
+            hasRegisteredCourses: true,
+            registeredCoursesCount: registeredCourseCodes.size,
             sessions: activeSessions
         });
 
