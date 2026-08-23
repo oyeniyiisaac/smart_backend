@@ -860,13 +860,18 @@ const createCourse = async (req, res) => {
             return res.status(400).json({ message: 'Course Code, Title, and Semester are required.' });
         }
 
-        // 2. Safe role and scope evaluation using optional chaining (?.)
-        const isSuperAdmin = currentUser?.role === 'super_admin';
-        const faculty = isSuperAdmin ? req.body.faculty : currentUser?.faculty;
-        const department = isSuperAdmin ? req.body.department : currentUser?.department;
+        // 2. Role validation: Super Admins hold supervisory oversight; only Department Admins/Lecturers create courses
+        if (currentUser?.role === 'super_admin') {
+            return res.status(403).json({
+                message: 'Course creation is reserved for Department Admins and Lecturers. Faculty Super Admins have supervisory oversight.'
+            });
+        }
+
+        const faculty = currentUser?.faculty;
+        const department = currentUser?.department;
 
         if (!faculty || !department) {
-            return res.status(400).json({ message: 'Faculty and Department must be provided or attached to user account.' });
+            return res.status(400).json({ message: 'Faculty and Department must be attached to your departmental administrator account.' });
         }
 
         // 3. Check for existing course entry
