@@ -929,9 +929,6 @@ const cloudinary_config = cloudinary.config({
     api_secret: api_usersecret,
 });
 
-console.log(cloudinary_config);
-
-
 
 
 const uploadProfilePicture = async (req, res) => {

@@ -62,5 +62,5 @@ cron.schedule('*/5 * * * *', async () => {
     }
 });
 app.listen(port, () => {
-    console.log(port)
+    console.log("The is a server running")
 })
