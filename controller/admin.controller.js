@@ -424,22 +424,24 @@ const adminGetAllSession = async (req, res) => {
         if (user?.role === 'super_admin' && user.faculty) {
             const fName = user.faculty.trim();
             const facultyPattern = (fName.toUpperCase() === 'FCI' || /computing/i.test(fName))
-                ? '^(FCI|Faculty of Computing.*)$'
-                : (fName.toUpperCase() === 'FBAS' || /applied science/i.test(fName))
-                ? '^(FBAS|Faculty of Basic.*)$'
+                ? '(FCI|Computing|Informatics)'
+                : (fName.toUpperCase() === 'FPAS' || fName.toUpperCase() === 'FBAS' || /applied science/i.test(fName))
+                ? '(FPAS|FBAS|Pure and Applied|Applied Science)'
                 : (fName.toUpperCase() === 'FET' || /engineering/i.test(fName))
-                ? '^(FET|Faculty of Engineering.*)$'
+                ? '(FET|Engineering)'
                 : fName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
             query.faculty = { $regex: new RegExp(facultyPattern, 'i') };
         } else if (user?.role === 'admin' && user.department) {
-            query.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+            const dName = user.department.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            query.department = { $regex: new RegExp(dName, 'i') };
         } else if (user?.role === 'course_rep') {
             if (user.department) {
-                query.department = { $regex: new RegExp(`^${user.department.trim()}$`, 'i') };
+                const dName = user.department.trim().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                query.department = { $regex: new RegExp(dName, 'i') };
             }
             if (user.level) {
                 const userLevel = user.level.trim().replace(/L$/i, '');
-                query.level = { $regex: new RegExp(`^${userLevel}(L)?$`, 'i') };
+                query.level = { $regex: new RegExp(userLevel, 'i') };
             }
         }
 

@@ -48,8 +48,9 @@ router.post("/create-course", protect, requireAdmin, createCourse);
 router.get("/courses", protect, requireAdmin, getCourses);
 router.delete("/delete-course/:id", protect, requireAdmin, deleteCourse);
 
-// Fetch all sessions
-router.get("/sessionall", protect, adminGetAllSession);
+// Fetch all sessions (supports both /sessions and /sessionall endpoints)
+router.get("/sessions", protect, requireAdmin, adminGetAllSession);
+router.get("/sessionall", protect, requireAdmin, adminGetAllSession);
 
 // Session Details & Monitoring
 router.get("/monitor/:id", protect, requireAdmin, getSingleSession);
