@@ -23,6 +23,15 @@ const AttendanceRecordSchema = new mongoose.Schema({
         type: String,
         enum: ['Present', 'Absent'],
         default: 'Present'
+    },
+    // 🔒 Audit Device Tracking
+    deviceId: {
+        type: String,
+        default: ''
+    },
+    deviceName: {
+        type: String,
+        default: ''
     }
 }, { timestamps: true });
 

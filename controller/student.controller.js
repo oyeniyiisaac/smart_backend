@@ -160,9 +160,11 @@ const signin = (req, res) => {
 // ----------------------------------------------------
 const login = async (req, res) => {
     try {
-        const { matricno, password } = req.body;
+        const { matricno, password, deviceInfo } = req.body;
+        const incomingDeviceId = (req.body.deviceId || req.headers['x-device-id'] || '').trim();
 
-        const student = await StudentModel.findOne({ matricno });
+        const cleanMatric = (matricno || '').trim();
+        const student = await StudentModel.findOne({ matricno: cleanMatric });
         if (!student) {
             return res.status(404).json({ message: "Student not found." });
         }
@@ -170,6 +172,71 @@ const login = async (req, res) => {
         const verifyPassword = await bcrypt.compare(password, student.password);
         if (!verifyPassword) {
             return res.status(401).json({ message: "Invalid password." });
+        }
+
+        // 🔒 1-to-1 Device Binding & Anti-Proxy Attendance Enforcement
+        if (!incomingDeviceId) {
+            return res.status(400).json({
+                success: false,
+                code: 'DEVICE_ID_REQUIRED',
+                message: "Device verification failed. A valid device identifier is required to access your student account. Please ensure cookies or local storage are enabled."
+            });
+        }
+
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        const userAgent = req.headers['user-agent'] || '';
+
+        if (student.deviceId) {
+            // Scenario 1: Student already has a bound device
+            if (student.deviceId !== incomingDeviceId) {
+                const boundDevice = student.deviceInfo?.name || "your registered primary device";
+                return res.status(403).json({
+                    success: false,
+                    code: 'DEVICE_MISMATCH',
+                    message: `Access Denied: This student account is locked to your registered device (${boundDevice}). University policy strictly limits each student to one device to prevent proxy attendance. If you have changed your phone or lost access, please contact your lecturer or administrator for a device reset.`,
+                    boundDevice: boundDevice
+                });
+            }
+        } else {
+            // Scenario 2: Student has no bound device yet.
+            // Check if THIS physical device is already bound to ANOTHER student account!
+            const existingOwner = await StudentModel.findOne({
+                deviceId: incomingDeviceId,
+                matricno: { $ne: student.matricno }
+            });
+
+            if (existingOwner) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'DEVICE_ALREADY_BOUND',
+                    message: `Device Conflict: This physical device is already registered to another student account (${existingOwner.matricno}). Multiple student accounts are strictly prohibited on the same device to prevent proxy attendance.`
+                });
+            }
+
+            // Bind this device to the student
+            student.deviceId = incomingDeviceId;
+            student.deviceInfo = {
+                name: deviceInfo?.name || 'Primary Device',
+                platform: deviceInfo?.platform || '',
+                browser: deviceInfo?.browser || '',
+                os: deviceInfo?.os || '',
+                userAgent: userAgent,
+                lastIp: clientIp,
+                boundAt: new Date(),
+                lastLoginAt: new Date()
+            };
+            student.deviceResetRequested = false;
+            student.deviceResetReason = '';
+            student.deviceResetRequestedAt = null;
+            await student.save();
+        }
+
+        // Keep lastLoginAt and IP up to date
+        if (student.deviceInfo) {
+            student.deviceInfo.lastLoginAt = new Date();
+            student.deviceInfo.lastIp = clientIp;
+            student.markModified('deviceInfo');
+            await student.save();
         }
 
         const payload = {
@@ -188,7 +255,8 @@ const login = async (req, res) => {
         return res.status(200).json({
             message: 'Sign in successful',
             data: { id: student._id },
-            token
+            token,
+            deviceInfo: student.deviceInfo
         });
 
     } catch (error) {
@@ -299,6 +367,23 @@ const verifyStudentLocation = async (req, res) => {
             return res.status(401).json({ message: "Unauthorized. Student identification missing from token." });
         }
         studentMatric = studentMatric.trim();
+
+        // 🔒 Guard: Verify Student Device Binding to prevent proxy check-in
+        const studentDoc = await StudentModel.findOne({ matricno: studentMatric });
+        if (!studentDoc) {
+            return res.status(404).json({ message: "Student record not found." });
+        }
+
+        const incomingDeviceId = (req.body.deviceId || req.headers['x-device-id'] || '').trim();
+        if (studentDoc.deviceId) {
+            if (!incomingDeviceId || incomingDeviceId !== studentDoc.deviceId) {
+                return res.status(403).json({
+                    verified: false,
+                    code: 'DEVICE_MISMATCH',
+                    message: "Device Verification Failed: Attendance can only be marked from your registered device. Check-ins from unlinked or foreign devices are blocked to prevent proxy attendance."
+                });
+            }
+        }
 
         const {
             studentLatitude,
@@ -460,7 +545,9 @@ const verifyStudentLocation = async (req, res) => {
                     courseCode: courseCode,
                     studentMatric: studentMatric,
                     verifiedVia: "DynamicQR",
-                    status: "Present"
+                    status: "Present",
+                    deviceId: incomingDeviceId || studentDoc.deviceId || '',
+                    deviceName: studentDoc.deviceInfo?.name || 'Verified Device'
                 });
             } catch (dbError) {
                 if (dbError.code === 11000) {
@@ -502,7 +589,9 @@ const verifyStudentLocation = async (req, res) => {
                     courseCode: courseCode,
                     studentMatric: studentMatric,
                     verifiedVia: "Hardware",
-                    status: "Present"
+                    status: "Present",
+                    deviceId: incomingDeviceId || studentDoc.deviceId || '',
+                    deviceName: studentDoc.deviceInfo?.name || 'Verified Device'
                 });
             } catch (dbError) {
                 if (dbError.code === 11000) {
@@ -557,7 +646,9 @@ const verifyStudentLocation = async (req, res) => {
                     courseCode: courseCode,
                     studentMatric: studentMatric,
                     verifiedVia: "GPS",
-                    status: "Present"
+                    status: "Present",
+                    deviceId: incomingDeviceId || studentDoc.deviceId || '',
+                    deviceName: studentDoc.deviceInfo?.name || 'Verified Device'
                 });
             } catch (dbError) {
                 if (dbError.code === 11000) {
@@ -1115,6 +1206,69 @@ const resetStudentPassword = async (req, res) => {
     }
 };
 
+// ----------------------------------------------------
+// 14. DEVICE STATUS & RESET REQUEST (Student)
+// ----------------------------------------------------
+const getStudentDeviceStatus = async (req, res) => {
+    try {
+        const studentMatric = req.user?.matricno;
+        if (!studentMatric) {
+            return res.status(401).json({ message: "Unauthorized. Missing matric number." });
+        }
+
+        const student = await StudentModel.findOne({ matricno: studentMatric.trim() });
+        if (!student) {
+            return res.status(404).json({ message: "Student record not found." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            isBound: !!student.deviceId,
+            deviceId: student.deviceId || null,
+            deviceInfo: student.deviceInfo || null,
+            deviceResetRequested: student.deviceResetRequested || false,
+            deviceResetReason: student.deviceResetReason || '',
+            deviceResetRequestedAt: student.deviceResetRequestedAt || null
+        });
+    } catch (error) {
+        console.error("Error fetching device status:", error);
+        return res.status(500).json({ message: "Server error fetching device status." });
+    }
+};
+
+const requestDeviceReset = async (req, res) => {
+    try {
+        const studentMatric = req.user?.matricno;
+        const { reason } = req.body;
+
+        if (!studentMatric) {
+            return res.status(401).json({ message: "Unauthorized. Missing matric number." });
+        }
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ message: "Please state the reason for requesting a device reset." });
+        }
+
+        const student = await StudentModel.findOne({ matricno: studentMatric.trim() });
+        if (!student) {
+            return res.status(404).json({ message: "Student record not found." });
+        }
+
+        student.deviceResetRequested = true;
+        student.deviceResetReason = reason.trim();
+        student.deviceResetRequestedAt = new Date();
+        await student.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Your device reset request has been submitted. A lecturer or admin will review and reset your device binding."
+        });
+    } catch (error) {
+        console.error("Error submitting device reset request:", error);
+        return res.status(500).json({ message: "Server error requesting device reset." });
+    }
+};
+
 module.exports = {
     register,
     signin,
@@ -1129,5 +1283,7 @@ module.exports = {
     getMyCourses,
     uploadProfilePicture,
     requestStudentPasswordReset,
-    resetStudentPassword
+    resetStudentPassword,
+    getStudentDeviceStatus,
+    requestDeviceReset
 };

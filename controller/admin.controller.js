@@ -882,7 +882,12 @@ const getStudents = async (req, res) => {
                 department: student.department || 'General',
                 level: student.level || '100L',
                 enrolledCourses: enrolledText,
-                status: status 
+                status: status,
+                deviceId: student.deviceId || null,
+                deviceInfo: student.deviceInfo || null,
+                deviceResetRequested: student.deviceResetRequested || false,
+                deviceResetReason: student.deviceResetReason || '',
+                deviceResetRequestedAt: student.deviceResetRequestedAt || null
             };
         });
 
@@ -1230,6 +1235,42 @@ const resetAdminPassword = async (req, res) => {
     }
 };
 
+// ----------------------------------------------------
+// 22. RESET STUDENT DEVICE BINDING (Admin/Lecturer)
+// ----------------------------------------------------
+const resetStudentDevice = async (req, res) => {
+    try {
+        const { studentId, matricno } = req.body;
+        if (!studentId && !matricno) {
+            return res.status(400).json({ message: "Student ID or Matric Number is required." });
+        }
+
+        const query = studentId ? { _id: studentId } : { matricno: matricno.trim() };
+        const student = await Student.findOne(query);
+
+        if (!student) {
+            return res.status(404).json({ message: "Student record not found." });
+        }
+
+        const oldDevice = student.deviceInfo?.name || student.deviceId || "Registered Device";
+        student.deviceId = null;
+        student.deviceInfo = null;
+        student.deviceResetRequested = false;
+        student.deviceResetReason = '';
+        student.deviceResetRequestedAt = null;
+        await student.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Device binding for ${student.firstname} ${student.lastname} (${student.matricno}) has been reset. The student can now register a new device upon their next login.`,
+            studentId: student._id
+        });
+    } catch (error) {
+        console.error("Error resetting student device binding:", error);
+        return res.status(500).json({ message: "Failed to reset student device binding." });
+    }
+};
+
 module.exports = {
     protect,
     requireAdmin,
@@ -1252,5 +1293,6 @@ module.exports = {
     deleteCourse,
     getDashboardStats,
     requestAdminPasswordReset,
-    resetAdminPassword
+    resetAdminPassword,
+    resetStudentDevice
 };

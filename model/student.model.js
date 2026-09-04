@@ -22,6 +22,21 @@ const studentSchema = new mongoose.Schema({
     },
     password: { type: String, required: true },
     profilePicture: { type: String, default: '' },
+    // 🔒 1-to-1 Device Binding & Anti-Proxy Attendance Security
+    deviceId: { type: String, default: null, index: true },
+    deviceInfo: {
+        name: { type: String, default: '' },
+        platform: { type: String, default: '' },
+        browser: { type: String, default: '' },
+        os: { type: String, default: '' },
+        userAgent: { type: String, default: '' },
+        lastIp: { type: String, default: '' },
+        boundAt: { type: Date, default: null },
+        lastLoginAt: { type: Date, default: null }
+    },
+    deviceResetRequested: { type: Boolean, default: false },
+    deviceResetReason: { type: String, default: '' },
+    deviceResetRequestedAt: { type: Date, default: null }
 }, {
     timestamps: true
 });

@@ -12,7 +12,9 @@ const {
     getMyCourses,
     uploadProfilePicture,
     requestStudentPasswordReset,
-    resetStudentPassword
+    resetStudentPassword,
+    getStudentDeviceStatus,
+    requestDeviceReset
 } = require('../controller/student.controller')
 const verifyToken = require('../middleware.auth');
 const { getCourses } = require('../controller/admin.controller');
@@ -25,6 +27,7 @@ router.get('/my-attendance', verifyToken, myAttendance);
 router.get("/courses", verifyToken, getCourses);
 router.get("/get-student-registrations", verifyToken, getStudentRegistrations);
 router.get("/my-courses", verifyToken, getMyCourses);
+router.get("/device-status", verifyToken, getStudentDeviceStatus);
 
 router.post('/register', register)
 router.post('/login', login)
@@ -33,6 +36,7 @@ router.post('/reset-password', resetStudentPassword)
 router.post("/verify-attendance", verifyToken, verifyStudentLocation);
 router.post("/submit-course-registration", verifyToken, submitCourseRegistration);
 router.post("/upload-profile-picture", verifyToken, uploadProfilePicture);
+router.post("/request-device-reset", verifyToken, requestDeviceReset);
 
 module.exports = router
 
