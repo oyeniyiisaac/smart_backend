@@ -10,9 +10,15 @@ const UserRoute = require('./routes/student.route')
 const AdminRoute = require('./routes/adminlog.route')
 const AdminCreateSession = require('./model/adminCreateSession.model')
 const { markAbsentees } = require('./controller/student.controller'); // Adjust path to your controller
-app.use(express.urlencoded({limit: '50mb', extended: true }))
+app.use(express.urlencoded({ limit: '50mb', extended: true }))
 app.use(express.json({ limit: '50mb' }))
-app.use(cors())
+app.use(cors({
+    origin: [
+        "https://smartattendance.com.ng",
+        "https://www.smartattendance.com.ng",
+    ],
+    credentials: true,
+}))
 
 app.use('/', UserRoute)
 app.use('/admin', AdminRoute)
