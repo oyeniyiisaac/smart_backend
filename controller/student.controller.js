@@ -63,7 +63,7 @@ const register = async (req, res) => {
             const loginLink = `${clientOrigin}/signin`;
 
             await resend.emails.send({
-                from: "info@smartattendance.com.ng",
+                from: "noreply@smartattendance.com.ng",
                 to: cleanEmail,
                 subject: "🎓 Welcome to Smart Attendance System - Student Account Created",
                 html: `
@@ -1107,13 +1107,13 @@ const requestStudentPasswordReset = async (req, res) => {
         });
 
         // Construct direct one-click reset link
-        const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-system.vercel.app';
+        const clientOrigin = req.headers.origin || process.env.CLIENT_URL;
         const resetLink = `${clientOrigin}/forgot-password?email=${encodeURIComponent(student.email)}&otp=${otp}&type=student`;
 
         // Send Email via Resend
         try {
             await resend.emails.send({
-                from: "onboarding@resend.dev",
+                from: "noreply@smartattendance.com.ng",
                 to: student.email,
                 subject: "🔐 Student Password Reset - Smart Attendance System",
                 html: `
