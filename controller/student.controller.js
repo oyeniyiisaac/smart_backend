@@ -59,11 +59,11 @@ const register = async (req, res) => {
 
         // Send professional welcome confirmation email asynchronously
         try {
-            const clientOrigin = req.headers.origin || process.env.CLIENT_URL || 'https://smart-attendance-two-orpin.vercel.app';
+            const clientOrigin = req.headers.origin || process.env.CLIENT_URL;
             const loginLink = `${clientOrigin}/signin`;
 
             await resend.emails.send({
-                from: "onboarding@resend.dev",
+                from: "info@smartattendance.com.ng",
                 to: cleanEmail,
                 subject: "🎓 Welcome to Smart Attendance System - Student Account Created",
                 html: `
@@ -298,8 +298,8 @@ const dashboard = async (req, res) => {
         const absentCount = totalRecords - attendedCount;
 
         // Calculate overall percentage
-        const overallPercentage = totalRecords > 0 
-            ? Math.round((attendedCount / totalRecords) * 100) 
+        const overallPercentage = totalRecords > 0
+            ? Math.round((attendedCount / totalRecords) * 100)
             : 0;
 
         const isEligible = totalRecords === 0 || overallPercentage >= 75;
@@ -429,7 +429,7 @@ const verifyStudentLocation = async (req, res) => {
         // 🔒 Guard: Verify Student has Registered for this Course
         const targetCourseCode = courseCode || activeSession.courseCode;
         const studentObjId = authUser?.id || authUser?._id;
-        
+
         const courseReg = await CourseRegistration.findOne({
             $or: [
                 ...(studentObjId ? [{ studentId: studentObjId }] : []),
@@ -481,7 +481,7 @@ const verifyStudentLocation = async (req, res) => {
             const now = Date.now();
             const ROTATION_INTERVAL = 20; // 20-second dynamic slot
             const currentSlot = Math.floor(now / (ROTATION_INTERVAL * 1000));
-            
+
             let isValidQR = false;
 
             // Check if user submitted a 6-digit passcode directly
