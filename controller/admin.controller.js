@@ -1194,7 +1194,7 @@ const resetAdminPassword = async (req, res) => {
         if (!email || !otp || !newPassword) {
             return res.status(400).json({ message: "All fields are required." });
         }
-        if (newPassword !== confirmPassword) {
+        if (confirmPassword !== undefined && newPassword !== confirmPassword) {
             return res.status(400).json({ message: "Passwords do not match." });
         }
         if (newPassword.length < 6) {
