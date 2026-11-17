@@ -171,7 +171,7 @@ const login = async (req, res) => {
 
         const verifyPassword = await bcrypt.compare(password, student.password);
         if (!verifyPassword) {
-            return res.status(401).json({ message: "Invalid password." });
+            return res.status(401).json({ message: "Invalid credentials." });
         }
 
         // 🔒 1-to-1 Device Binding & Anti-Proxy Attendance Enforcement
@@ -1189,8 +1189,8 @@ const resetStudentPassword = async (req, res) => {
             return res.status(400).json({ message: "Invalid or expired OTP code. Please request a new code." });
         }
 
-        const hashedPassword = await bcrypt.hash(newPassword, 12);
-        student.password = hashedPassword;
+        // Assign plain password; studentSchema.pre('save') automatically hashes it
+        student.password = newPassword;
         await student.save();
 
         resetDoc.used = true;
